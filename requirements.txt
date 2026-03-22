@@ -1,0 +1,6 @@
+PySide6>=6.5.0
+pyqtgraph>=0.13.3
+dnspython>=2.4.0
+python-whois>=0.8.0
+requests>=2.31.0
+numpy>=1.24.0
