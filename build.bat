@@ -36,12 +36,18 @@ echo (This takes 1-3 minutes on first build)
 echo (Output also logged to build.log)
 echo.
 
+REM Output outside Dropbox to avoid sync-lock failures on clean rebuild
+set DISTPATH=C:\temp\NetPulse-dist
+set WORKPATH=C:\temp\NetPulse-work
+
+echo Build output: %DISTPATH% >> build.log
+
 REM Force pyqtgraph to use PySide6 (not PyQt6) during analysis
 set QT_API=PySide6
 set PYQTGRAPH_QT_LIB=PySide6
 
 REM Run from spec file using venv Python (uv CPython, no AppContainer sandbox)
-"%PYTHON%" -m PyInstaller --noconfirm --clean NetPulse.spec >> build.log 2>&1
+"%PYTHON%" -m PyInstaller --noconfirm --clean --distpath "%DISTPATH%" --workpath "%WORKPATH%" NetPulse.spec >> build.log 2>&1
 
 if errorlevel 1 (
     echo Build finished: %DATE% %TIME%  [FAILED] >> build.log
@@ -56,12 +62,12 @@ echo Build finished: %DATE% %TIME%  [OK] >> build.log
 echo.
 echo ============================================
 echo  Build complete!
-echo  Executable: dist\NetPulse\NetPulse.exe
+echo  Executable: %DISTPATH%\NetPulse\NetPulse.exe
 echo  Log saved:  build.log
 echo ============================================
 echo.
 echo Notes:
-echo   - dist\NetPulse\ is a self-contained folder (~120 MB)
+echo   - %DISTPATH%\NetPulse\ is a self-contained folder (~120 MB)
 echo   - Zip it and share - no Python install needed on target PC
 echo   - First launch may be slow (AV scan); subsequent launches are fast
 echo.
