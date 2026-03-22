@@ -113,6 +113,11 @@ class MainWindow(QMainWindow):
         self._sb_right.setStyleSheet("color: #8b949e; padding: 2px 6px;")
         self._status_bar.addPermanentWidget(self._sb_right)
 
+        ver = QApplication.applicationVersion()
+        self._sb_version = QLabel(f"v{ver}")
+        self._sb_version.setStyleSheet("color: #484f58; padding: 2px 8px; font-size: 8pt;")
+        self._status_bar.addPermanentWidget(self._sb_version)
+
     def _build_toolbar(self) -> QWidget:
         bar = QFrame()
         bar.setObjectName("toolbar")
@@ -193,6 +198,10 @@ class MainWindow(QMainWindow):
 
         show_action = menu.addAction("Show / Hide")
         show_action.triggered.connect(self._toggle_window)
+
+        menu.addSeparator()
+        about_action = menu.addAction("About NetPulse…")
+        about_action.triggered.connect(self._show_about)
 
         menu.addSeparator()
         quit_action = menu.addAction("Exit NetPulse")
@@ -419,6 +428,20 @@ class MainWindow(QMainWindow):
             "Still running in background. Right-click the tray icon to exit.",
             QSystemTrayIcon.MessageIcon.Information,
             2500,
+        )
+
+    def _show_about(self):
+        ver = QApplication.applicationVersion()
+        QMessageBox.about(
+            self,
+            "About NetPulse",
+            f"<h3>NetPulse v{ver}</h3>"
+            "<p>Real-time network diagnostic tool.<br>"
+            "Ping monitoring, traceroute, DNS/GeoIP/WHOIS dossier, and configurable alerts.</p>"
+            "<p style='color:#8b949e; font-size:9pt;'>"
+            "© 2025 Guy Schamp (kilrkrow)<br>"
+            "Released under the MIT License."
+            "</p>",
         )
 
     def _toggle_window(self):

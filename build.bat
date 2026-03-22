@@ -21,25 +21,8 @@ REM Force pyqtgraph to use PySide6 (not PyQt6) during analysis
 set QT_API=PySide6
 set PYQTGRAPH_QT_LIB=PySide6
 
-python -m PyInstaller ^
-    --name "NetPulse" ^
-    --windowed ^
-    --onedir ^
-    --noconfirm ^
-    --clean ^
-    --add-data "core;core" ^
-    --add-data "ui;ui" ^
-    --hidden-import "PySide6.QtSvg" ^
-    --hidden-import "PySide6.QtXml" ^
-    --hidden-import "pyqtgraph" ^
-    --hidden-import "dns.resolver" ^
-    --hidden-import "dns.reversename" ^
-    --hidden-import "whois" ^
-    --hidden-import "numpy" ^
-    --exclude-module "PyQt6" ^
-    --exclude-module "PyQt5" ^
-    --exclude-module "PyQt4" ^
-    main.py
+REM Run from spec file so workarounds (embed_manifest, icon) are preserved
+python -m PyInstaller --noconfirm --clean NetPulse.spec
 
 if errorlevel 1 (
     echo.
@@ -58,6 +41,5 @@ echo Notes:
 echo   - dist\NetPulse\ is a self-contained folder (~120 MB)
 echo   - Zip it and share - no Python install needed on target PC
 echo   - First launch may be slow (AV scan); subsequent launches are fast
-echo   - For a single-file .exe use --onefile (slower startup, same size)
 echo.
 pause

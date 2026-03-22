@@ -3,6 +3,8 @@
 Entry point: configures pyqtgraph, applies dark theme, launches MainWindow.
 """
 
+APP_VERSION = "1.0.0"
+
 import os
 import sys
 
@@ -236,7 +238,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("NetPulse")
     app.setApplicationDisplayName("NetPulse")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(APP_VERSION)
     app.setQuitOnLastWindowClosed(False)
     app.setStyleSheet(DARK_STYLE)
     app.setWindowIcon(_app_icon())

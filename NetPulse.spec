@@ -32,7 +32,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    embed_manifest=False,
+    icon=None,           # skip CopyIcons (Store Python sandbox workaround)
+    embed_manifest=False, # skip EndUpdateResourceW (Store Python sandbox workaround)
 )
 coll = COLLECT(
     exe,
