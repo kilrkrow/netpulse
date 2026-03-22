@@ -126,6 +126,14 @@ class TracerouteTab(QWidget):
         while self._host_combo.count() > 15:
             self._host_combo.removeItem(self._host_combo.count() - 1)
 
+    def get_history(self) -> list:
+        return [self._host_combo.itemText(i) for i in range(self._host_combo.count())]
+
+    def load_history(self, items: list):
+        for host in items:
+            if self._host_combo.findText(host) < 0:
+                self._host_combo.addItem(host)
+
     def set_target(self, host: str):
         self.add_to_history(host)
 
@@ -135,6 +143,7 @@ class TracerouteTab(QWidget):
             self._progress.setText("Enter a hostname or IP above.")
             return
         self._target = target
+        self.add_to_history(target)
 
         self._hops.clear()
         self._table.setRowCount(0)

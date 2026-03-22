@@ -116,10 +116,12 @@ class MonitorTab(QWidget):
         zoom_bar = QHBoxLayout()
         zoom_bar.setContentsMargins(0, 1, 2, 0)
         zoom_bar.addStretch()
-        self._reset_zoom_btn = QPushButton("⟲ Reset Zoom")
-        self._reset_zoom_btn.setFixedWidth(100)
-        self._reset_zoom_btn.setEnabled(False)
-        self._reset_zoom_btn.setStyleSheet("font-size: 8pt; padding: 2px 6px;")
+        self._reset_zoom_btn = QPushButton("● Live")
+        self._reset_zoom_btn.setFixedWidth(90)
+        self._reset_zoom_btn.setToolTip("Click to return to live auto-scrolling view")
+        self._reset_zoom_btn.setStyleSheet(
+            "font-size: 8pt; padding: 2px 6px; color: #3fb950;"
+        )
         self._reset_zoom_btn.clicked.connect(self._reset_zoom)
         zoom_bar.addWidget(self._reset_zoom_btn)
         graph_layout.addLayout(zoom_bar)
@@ -237,12 +239,21 @@ class MonitorTab(QWidget):
     def _on_user_zoom(self, axes):
         if not self._user_zoomed:
             self._user_zoomed = True
-            self._reset_zoom_btn.setEnabled(True)
+            self._reset_zoom_btn.setText("↺ Live View")
+            self._reset_zoom_btn.setStyleSheet(
+                "font-size: 8pt; padding: 2px 6px; "
+                "background-color: #1a4731; border-color: #2ea043; color: #3fb950; font-weight: bold;"
+            )
+            self._reset_zoom_btn.setToolTip("Zoom is active — click to return to live auto-scrolling view")
 
     def _reset_zoom(self):
         self._user_zoomed = False
-        self._reset_zoom_btn.setEnabled(False)
         self._rtt_plot.enableAutoRange()
+        self._reset_zoom_btn.setText("● Live")
+        self._reset_zoom_btn.setStyleSheet(
+            "font-size: 8pt; padding: 2px 6px; color: #3fb950;"
+        )
+        self._reset_zoom_btn.setToolTip("Click to return to live auto-scrolling view")
 
     def set_engine(self, engine: PingEngine, graph_window: int):
         if self._engine:
@@ -259,7 +270,10 @@ class MonitorTab(QWidget):
         self._start_ts = time.time()
         self._last_stats = None
         self._user_zoomed = False
-        self._reset_zoom_btn.setEnabled(False)
+        self._reset_zoom_btn.setText("● Live")
+        self._reset_zoom_btn.setStyleSheet(
+            "font-size: 8pt; padding: 2px 6px; color: #3fb950;"
+        )
         self._engine.result_ready.connect(self._on_result)
         self._engine.stats_updated.connect(self._on_stats)
         self._rtt_plot.enableAutoRange()

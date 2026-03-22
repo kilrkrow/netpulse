@@ -179,7 +179,7 @@ class DossierTab(QWidget):
     def notify_host(self, host: str):
         self._lookup_combo.lineEdit().setText(host)
 
-    def _add_to_history(self, host: str):
+    def add_to_history(self, host: str):
         idx = self._lookup_combo.findText(host)
         if idx >= 0:
             self._lookup_combo.removeItem(idx)
@@ -188,12 +188,20 @@ class DossierTab(QWidget):
         while self._lookup_combo.count() > 15:
             self._lookup_combo.removeItem(self._lookup_combo.count() - 1)
 
+    def get_history(self) -> list:
+        return [self._lookup_combo.itemText(i) for i in range(self._lookup_combo.count())]
+
+    def load_history(self, items: list):
+        for host in items:
+            if self._lookup_combo.findText(host) < 0:
+                self._lookup_combo.addItem(host)
+
     def _lookup(self):
         target = self._lookup_combo.currentText().strip()
         if not target:
             return
 
-        self._add_to_history(target)
+        self.add_to_history(target)
         self._target = target
         self._clear_all()
         self._res_grid.set_value("Target", target)

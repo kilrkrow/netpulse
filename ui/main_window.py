@@ -2,6 +2,8 @@
 
 import csv
 import datetime
+import json
+import os
 from collections import deque
 
 from PySide6.QtCore import Qt, QTimer, Slot
@@ -73,6 +75,8 @@ class MainWindow(QMainWindow):
         self._sb_timer = QTimer()
         self._sb_timer.timeout.connect(self._update_status_bar)
         self._sb_timer.start(1000)
+
+        self._load_history()
 
     def _build_ui(self):
         central = QWidget()
@@ -198,8 +202,45 @@ class MainWindow(QMainWindow):
         self._tray.activated.connect(self._tray_activated)
         self._tray.show()
 
+    # ------------------------------------------------------------------
+    # History persistence
+    # ------------------------------------------------------------------
+    def _history_file(self) -> str:
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+        folder = os.path.join(base, 'NetPulse')
+        os.makedirs(folder, exist_ok=True)
+        return os.path.join(folder, 'history.json')
+
+    def _load_history(self):
+        try:
+            with open(self._history_file(), encoding='utf-8') as f:
+                data = json.load(f)
+            self._host_combo.clear()
+            for host in data.get('ping', ['google.com']):
+                self._host_combo.addItem(host)
+            if not self._host_combo.count():
+                self._host_combo.addItem('google.com')
+            self._tracer_tab.load_history(data.get('tracert', []))
+            self._dossier_tab.load_history(data.get('dossier', []))
+        except Exception:
+            pass
+
+    def _save_history(self):
+        try:
+            data = {
+                'ping':    [self._host_combo.itemText(i) for i in range(self._host_combo.count())],
+                'tracert': self._tracer_tab.get_history(),
+                'dossier': self._dossier_tab.get_history(),
+            }
+            with open(self._history_file(), 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
     def _connect_signals(self):
         self._alert_mgr.alert_triggered.connect(self._on_alert)
+        self._tracer.finished.connect(self._on_tracer_done)
+        self._dossier.finished.connect(self._on_dossier_done)
 
     def _add_host_to_history(self, host: str):
         """Add host to ping combo history and push to tracert tab (non-destructively)."""
@@ -212,6 +253,15 @@ class MainWindow(QMainWindow):
         while combo.count() > 15:
             combo.removeItem(combo.count() - 1)
         self._tracer_tab.add_to_history(host)
+        self._save_history()
+
+    @Slot(list)
+    def _on_tracer_done(self, hops):
+        self._save_history()
+
+    @Slot(int, object)
+    def _on_dossier_done(self, request_id, result):
+        self._save_history()
 
     def _start(self):
         host = self._host_combo.currentText().strip()
