@@ -11,21 +11,24 @@ if exist build.log del /f /q build.log
 REM Timestamp the log
 echo Build started: %DATE% %TIME% > build.log
 
-REM Use uv-managed CPython (non-sandboxed) to avoid Store Python AppContainer restrictions
-set PYTHON=C:\Users\guysc\AppData\Roaming\uv\python\cpython-3.12.11-windows-x86_64-none\python.exe
+REM Use uv CPython (non-sandboxed) to seed the build venv
+set UV_PYTHON=C:\Users\guysc\AppData\Roaming\uv\python\cpython-3.12.11-windows-x86_64-none\python.exe
+set VENV=.venv-build
+set PYTHON=%VENV%\Scripts\python.exe
 
-echo Using Python: %PYTHON% >> build.log
-"%PYTHON%" --version >> build.log 2>&1
+echo Using base Python: %UV_PYTHON% >> build.log
+"%UV_PYTHON%" --version >> build.log 2>&1
 
-REM Install PyInstaller if not present
-"%PYTHON%" -m pip show pyinstaller >nul 2>&1
-if errorlevel 1 (
-    echo Installing PyInstaller...
-    "%PYTHON%" -m pip install pyinstaller >> build.log 2>&1
+REM Create venv from uv CPython if it doesn't exist (or if base Python changed)
+if not exist "%VENV%\Scripts\python.exe" (
+    echo Creating build venv from uv CPython... >> build.log
+    "%UV_PYTHON%" -m venv "%VENV%" >> build.log 2>&1
 )
 
-REM Install required packages if missing
-"%PYTHON%" -m pip install PySide6 pyqtgraph dnspython python-whois requests >nul 2>&1
+REM Install/upgrade build dependencies into the venv
+echo Installing build dependencies... >> build.log
+"%PYTHON%" -m pip install --upgrade --quiet pip >> build.log 2>&1
+"%PYTHON%" -m pip install --quiet pyinstaller PySide6 pyqtgraph dnspython python-whois requests >> build.log 2>&1
 
 echo.
 echo Building NetPulse.exe ...
@@ -37,7 +40,7 @@ REM Force pyqtgraph to use PySide6 (not PyQt6) during analysis
 set QT_API=PySide6
 set PYQTGRAPH_QT_LIB=PySide6
 
-REM Run from spec file using uv CPython (no AppContainer sandbox)
+REM Run from spec file using venv Python (uv CPython, no AppContainer sandbox)
 "%PYTHON%" -m PyInstaller --noconfirm --clean NetPulse.spec >> build.log 2>&1
 
 if errorlevel 1 (
