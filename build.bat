@@ -11,12 +11,21 @@ if exist build.log del /f /q build.log
 REM Timestamp the log
 echo Build started: %DATE% %TIME% > build.log
 
+REM Use uv-managed CPython (non-sandboxed) to avoid Store Python AppContainer restrictions
+set PYTHON=C:\Users\guysc\AppData\Roaming\uv\python\cpython-3.12.11-windows-x86_64-none\python.exe
+
+echo Using Python: %PYTHON% >> build.log
+"%PYTHON%" --version >> build.log 2>&1
+
 REM Install PyInstaller if not present
-python -m pip show pyinstaller >nul 2>&1
+"%PYTHON%" -m pip show pyinstaller >nul 2>&1
 if errorlevel 1 (
     echo Installing PyInstaller...
-    python -m pip install pyinstaller >> build.log 2>&1
+    "%PYTHON%" -m pip install pyinstaller >> build.log 2>&1
 )
+
+REM Install required packages if missing
+"%PYTHON%" -m pip install PySide6 pyqtgraph dnspython python-whois requests >nul 2>&1
 
 echo.
 echo Building NetPulse.exe ...
@@ -28,9 +37,8 @@ REM Force pyqtgraph to use PySide6 (not PyQt6) during analysis
 set QT_API=PySide6
 set PYQTGRAPH_QT_LIB=PySide6
 
-REM Run from spec file so workarounds (embed_manifest, icon) are preserved
-REM Tee output to console AND build.log (overwrite already handled above)
-python -m PyInstaller --noconfirm --clean NetPulse.spec >> build.log 2>&1
+REM Run from spec file using uv CPython (no AppContainer sandbox)
+"%PYTHON%" -m PyInstaller --noconfirm --clean NetPulse.spec >> build.log 2>&1
 
 if errorlevel 1 (
     echo Build finished: %DATE% %TIME%  [FAILED] >> build.log
