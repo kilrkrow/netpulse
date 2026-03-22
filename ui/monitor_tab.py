@@ -1,401 +1,609 @@
-"""Monitor tab: real-time RTT graph + comprehensive stats grid."""
+"""Monitor tab: multi-session ping with live table and overlay-graph views."""
 
-import datetime
-import time
+import itertools
 from collections import deque
-from typing import Deque, Optional
+from typing import List, Optional
 
-import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSplitter, QVBoxLayout, QWidget
+
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.alerts import AlertManager
 from core.ping_engine import PingEngine, PingResult, PingStats
+from core.process_monitor import ProcessWatcher, get_running_processes
 
-C_BG = "#0d1117"
-C_SURFACE = "#161b22"
-C_BORDER = "#30363d"
-C_TEXT = "#c9d1d9"
-C_MUTED = "#8b949e"
-C_GREEN = "#3fb950"
-C_YELLOW = "#d29922"
-C_RED = "#f85149"
-C_BLUE = "#58a6ff"
+pg.setConfigOptions(antialias=True)
+
+# Colour palette for dark theme — cycles as more sessions are added
+SESSION_COLORS = [
+    "#58a6ff",  # blue
+    "#3fb950",  # green
+    "#d29922",  # amber
+    "#d2a8ff",  # purple
+    "#ff7b72",  # salmon
+    "#ffa657",  # orange
+    "#79c0ff",  # sky
+    "#56d364",  # lime
+]
+
+_id_gen = itertools.count(1)
 
 
-def _rtt_color(rtt: float, threshold: float) -> str:
-    if rtt > threshold:
-        return C_RED
-    if rtt > threshold * 0.75:
-        return C_YELLOW
-    return C_GREEN
-
-
-class StatBox(QFrame):
-    """A small card showing a label and a large value."""
-
-    def __init__(self, label: str, parent=None):
-        super().__init__(parent)
-        self.setObjectName("statBox")
-        self.setStyleSheet(
-            f"""
-            QFrame#statBox {{
-                background: {C_SURFACE};
-                border: 1px solid {C_BORDER};
-                border-radius: 5px;
-            }}
-            """
-        )
-        self.setMinimumWidth(110)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 5, 8, 5)
-        layout.setSpacing(1)
-
-        self._lbl = QLabel(label.upper())
-        self._lbl.setStyleSheet(
-            f"color: {C_MUTED}; font-size: 8pt; font-weight: bold; "
-            "background: transparent; border: none;"
-        )
-        self._lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self._val = QLabel("-")
-        self._val.setFont(QFont("Consolas", 14, QFont.Weight.Bold))
-        self._val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._val.setStyleSheet(f"color: {C_TEXT}; background: transparent; border: none;")
-
-        layout.addWidget(self._lbl)
-        layout.addWidget(self._val)
-
-    def set_value(self, text: str, color: str = C_TEXT):
-        self._val.setText(text)
-        self._val.setStyleSheet(
-            f"color: {color}; font-size: 14pt; font-weight: bold; "
-            "background: transparent; border: none;"
-        )
+class _PingSession:
+    def __init__(self, host: str, label: str, color: str,
+                 interval_ms: int, timeout_ms: int, window: int):
+        self.id = next(_id_gen)
+        self.host = host
+        self.label = label
+        self.color = color
+        self.engine = PingEngine(host, interval_ms, timeout_ms, window)
+        self.window = window
+        self.results: deque = deque(maxlen=window)
+        self.stats: Optional[PingStats] = None
+        self.plot_curve: Optional[pg.PlotDataItem] = None
 
 
 class MonitorTab(QWidget):
+    """Multi-session ping monitor with toggleable table and overlay-graph views."""
+
+    # For MainWindow: tray icon / alert manager
+    worst_stats_updated = Signal(object)   # PingStats — worst across all active sessions
+    # For MainWindow: push host into tracert/dossier history
+    session_started = Signal(str)
+    # For MainWindow: enable/disable export button etc.
+    any_running_changed = Signal(bool)
+
+    VIEW_TABLE = 0
+    VIEW_GRAPH = 1
+
     def __init__(self, alert_mgr: AlertManager, parent=None):
         super().__init__(parent)
         self._alert_mgr = alert_mgr
-        self._engine: Optional[PingEngine] = None
-        self._graph_window = 300
-        self._times: Deque[float] = deque(maxlen=3600)
-        self._rtts: Deque[Optional[float]] = deque(maxlen=3600)
-        self._start_ts = time.time()
-        self._last_stats: Optional[PingStats] = None
-        self._user_zoomed: bool = False
+        self._sessions: List[_PingSession] = []
+        self._color_idx = 0
+        self._view_mode = self.VIEW_TABLE
+        self._user_zoomed = False
+
+        # Defaults — kept in sync with MainWindow toolbar spins
+        self._interval_ms = 1000
+        self._timeout_ms = 2000
+        self._window = 300
 
         self._build_ui()
+        self._connect_watcher()
 
-        self._graph_timer = QTimer()
-        self._graph_timer.timeout.connect(self._refresh_graph)
-        self._graph_timer.start(250)
+        # Refresh table cells at 2 Hz
+        self._table_timer = QTimer(self)
+        self._table_timer.timeout.connect(self._refresh_table)
+        self._table_timer.start(500)
 
+    # ------------------------------------------------------------------
+    # Settings setters — called by MainWindow when toolbar spins change
+    # ------------------------------------------------------------------
+    def set_interval(self, ms: int):
+        self._interval_ms = ms
+
+    def set_timeout(self, ms: int):
+        self._timeout_ms = ms
+
+    def set_window(self, pts: int):
+        self._window = pts
+
+    # ------------------------------------------------------------------
+    # Build UI
+    # ------------------------------------------------------------------
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(4)
+        root.setContentsMargins(8, 8, 8, 4)
+        root.setSpacing(6)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setHandleWidth(2)
+        root.addLayout(self._build_controls())
 
-        graph_panel = QWidget()
-        graph_layout = QVBoxLayout(graph_panel)
-        graph_layout.setContentsMargins(0, 0, 0, 0)
-        graph_layout.setSpacing(2)
+        self._status_lbl = QLabel("Add a target above to start monitoring.")
+        self._status_lbl.setStyleSheet("color: #8b949e; font-size: 9pt;")
+        root.addWidget(self._status_lbl)
 
-        self._rtt_plot = self._build_rtt_plot()
-        self._loss_plot = self._build_loss_plot()
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self._build_table_view())
+        self._stack.addWidget(self._build_graph_view())
+        root.addWidget(self._stack)
 
-        graph_layout.addWidget(self._rtt_plot, 4)
+    def _build_controls(self) -> QHBoxLayout:
+        ctrl = QHBoxLayout()
+        ctrl.setSpacing(6)
 
-        zoom_bar = QHBoxLayout()
-        zoom_bar.setContentsMargins(0, 1, 2, 0)
-        zoom_bar.addStretch()
-        self._reset_zoom_btn = QPushButton("● Live")
-        self._reset_zoom_btn.setFixedWidth(90)
-        self._reset_zoom_btn.setToolTip("Click to return to live auto-scrolling view")
-        self._reset_zoom_btn.setStyleSheet(
-            "font-size: 8pt; padding: 2px 6px; color: #3fb950;"
+        # ── Manual target ──────────────────────────────────────────────
+        ctrl.addWidget(QLabel("Target:"))
+        self._host_combo = QComboBox()
+        self._host_combo.setEditable(True)
+        self._host_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._host_combo.lineEdit().setPlaceholderText("hostname or IP")
+        self._host_combo.setMinimumWidth(180)
+        self._host_combo.lineEdit().returnPressed.connect(self._on_start_clicked)
+        ctrl.addWidget(self._host_combo)
+
+        self._start_btn = QPushButton("▶ Start")
+        self._start_btn.setObjectName("startBtn")
+        self._start_btn.setFixedWidth(80)
+        self._start_btn.clicked.connect(self._on_start_clicked)
+        ctrl.addWidget(self._start_btn)
+
+        self._stop_all_btn = QPushButton("■ Stop All")
+        self._stop_all_btn.setObjectName("stopBtn")
+        self._stop_all_btn.setFixedWidth(90)
+        self._stop_all_btn.setEnabled(False)
+        self._stop_all_btn.clicked.connect(self.stop_all)
+        ctrl.addWidget(self._stop_all_btn)
+
+        # ── Separator ──────────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setStyleSheet("color: #30363d;")
+        ctrl.addWidget(sep)
+
+        # ── Process picker ─────────────────────────────────────────────
+        ctrl.addWidget(QLabel("Process:"))
+        self._proc_combo = QComboBox()
+        self._proc_combo.setEditable(True)
+        self._proc_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._proc_combo.lineEdit().setPlaceholderText("search running processes…")
+        self._proc_combo.setMinimumWidth(180)
+        ctrl.addWidget(self._proc_combo)
+
+        self._proc_refresh_btn = QPushButton("↻")
+        self._proc_refresh_btn.setFixedWidth(26)
+        self._proc_refresh_btn.setToolTip("Refresh process list")
+        self._proc_refresh_btn.clicked.connect(self._refresh_processes)
+        ctrl.addWidget(self._proc_refresh_btn)
+
+        self._watch_btn = QPushButton("Watch")
+        self._watch_btn.setObjectName("startBtn")
+        self._watch_btn.setFixedWidth(65)
+        self._watch_btn.setCheckable(True)
+        self._watch_btn.setToolTip(
+            "Monitor this process for TCP connections.\n"
+            "Works even before the process has launched."
         )
-        self._reset_zoom_btn.clicked.connect(self._reset_zoom)
-        zoom_bar.addWidget(self._reset_zoom_btn)
-        graph_layout.addLayout(zoom_bar)
+        self._watch_btn.clicked.connect(self._toggle_watch)
+        ctrl.addWidget(self._watch_btn)
 
-        graph_layout.addWidget(self._loss_plot, 1)
-        splitter.addWidget(graph_panel)
-        splitter.addWidget(self._build_stats_panel())
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        ctrl.addStretch()
 
-        root.addWidget(splitter)
+        # ── View toggle ────────────────────────────────────────────────
+        self._table_btn = QPushButton("⊞")
+        self._table_btn.setToolTip("Table view")
+        self._table_btn.setCheckable(True)
+        self._table_btn.setChecked(True)
+        self._table_btn.setFixedWidth(32)
+        self._table_btn.clicked.connect(lambda: self._set_view(self.VIEW_TABLE))
+        ctrl.addWidget(self._table_btn)
 
-    def _build_rtt_plot(self) -> pg.PlotWidget:
-        axis = pg.DateAxisItem(orientation="bottom")
-        plot = pg.PlotWidget(axisItems={"bottom": axis})
-        plot.setBackground(C_BG)
-        plot.getAxis("left").setTextPen(C_MUTED)
-        plot.getAxis("bottom").setTextPen(C_MUTED)
-        plot.getAxis("left").setPen(C_BORDER)
-        plot.getAxis("bottom").setPen(C_BORDER)
-        plot.setLabel("left", "RTT (ms)", color=C_MUTED)
-        plot.showGrid(x=True, y=True, alpha=0.15)
-        plot.setMouseEnabled(x=True, y=True)
-        plot.setMinimumHeight(200)
+        self._graph_btn = QPushButton("〜")
+        self._graph_btn.setToolTip("Overlay graph view")
+        self._graph_btn.setCheckable(True)
+        self._graph_btn.setFixedWidth(32)
+        self._graph_btn.clicked.connect(lambda: self._set_view(self.VIEW_GRAPH))
+        ctrl.addWidget(self._graph_btn)
 
-        self._rtt_line = plot.plot([], [], pen=pg.mkPen(C_GREEN, width=1.5))
-        self._rtt_scatter = pg.ScatterPlotItem(size=5, pen=pg.mkPen(None))
-        plot.addItem(self._rtt_scatter)
+        return ctrl
 
-        self._lost_scatter = pg.ScatterPlotItem(
-            symbol="x",
-            size=9,
-            pen=pg.mkPen(C_RED, width=2),
-            brush=pg.mkBrush(None),
+    def _build_table_view(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        cols = ["", "Host / Label", "RTT", "Loss %", "Min", "Max", "Avg", "Samples", ""]
+        self._table = QTableWidget(0, len(cols))
+        self._table.setHorizontalHeaderLabels(cols)
+        hdr = self._table.horizontalHeader()
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 28}
+        for col, width in fixed_widths.items():
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            self._table.setColumnWidth(col, width)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setAlternatingRowColors(False)
+        self._table.setStyleSheet("QTableWidget { gridline-color: #21262d; }")
+        layout.addWidget(self._table)
+        return w
+
+    def _build_graph_view(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self._plot = pg.PlotWidget(background="#0d1117")
+        self._plot.showGrid(x=True, y=True, alpha=0.15)
+        self._plot.setLabel("left", "RTT (ms)")
+        self._plot.setLabel("bottom", "Sample")
+        self._plot.setMouseEnabled(x=True, y=True)
+        for axis in ('left', 'bottom'):
+            self._plot.getAxis(axis).setPen(pg.mkPen("#8b949e"))
+            self._plot.getAxis(axis).setTextPen(pg.mkPen("#8b949e"))
+        self._plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
+        self._legend = self._plot.addLegend(
+            offset=(10, 10),
+            labelTextColor="#c9d1d9",
+            brush=pg.mkBrush(color=(22, 27, 34, 210)),
+            pen=pg.mkPen(color="#30363d"),
         )
-        plot.addItem(self._lost_scatter)
+        layout.addWidget(self._plot)
 
-        self._avg_line = pg.InfiniteLine(
-            angle=0,
-            movable=False,
-            pen=pg.mkPen(C_BLUE, width=1.2, style=Qt.PenStyle.DashLine),
-        )
-        plot.addItem(self._avg_line)
+        zoom_row = QHBoxLayout()
+        zoom_row.addStretch()
+        self._zoom_btn = QPushButton("● Live")
+        self._zoom_btn.setFixedWidth(110)
+        self._zoom_btn.clicked.connect(self._reset_zoom)
+        zoom_row.addWidget(self._zoom_btn)
+        layout.addLayout(zoom_row)
 
-        self._thresh_line = pg.InfiniteLine(
-            angle=0,
-            movable=False,
-            pen=pg.mkPen(C_RED, width=1.2, style=Qt.PenStyle.DotLine),
-        )
-        plot.addItem(self._thresh_line)
+        return w
 
-        self._avg_label = pg.TextItem(text="", color=C_BLUE, anchor=(1, 0))
-        self._thresh_label = pg.TextItem(text="", color=C_RED, anchor=(1, 1))
-        plot.addItem(self._avg_label)
-        plot.addItem(self._thresh_label)
-        plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
-        return plot
+    # ------------------------------------------------------------------
+    # Process watcher
+    # ------------------------------------------------------------------
+    def _connect_watcher(self):
+        self._watcher = ProcessWatcher(self)
+        self._watcher.process_found.connect(self._on_process_found)
+        self._watcher.connections_found.connect(self._on_connections_found)
+        self._refresh_processes()
 
-    def _build_loss_plot(self) -> pg.PlotWidget:
-        plot = pg.PlotWidget()
-        plot.setBackground(C_BG)
-        plot.getAxis("left").setTextPen(C_MUTED)
-        plot.getAxis("bottom").setTextPen(C_MUTED)
-        plot.getAxis("left").setPen(C_BORDER)
-        plot.getAxis("bottom").setPen(C_BORDER)
-        plot.setLabel("left", "Loss %", color=C_MUTED)
-        plot.showGrid(x=False, y=True, alpha=0.15)
-        plot.setMaximumHeight(80)
-        plot.setMouseEnabled(x=False, y=False)
-        plot.setYRange(0, 100, padding=0)
-        plot.getAxis("bottom").setStyle(showValues=False)
+    def _refresh_processes(self):
+        procs = get_running_processes()
+        current = self._proc_combo.currentText()
+        self._proc_combo.clear()
+        for p in procs:
+            self._proc_combo.addItem(p.name)
+        idx = self._proc_combo.findText(current)
+        if idx >= 0:
+            self._proc_combo.setCurrentIndex(idx)
+        elif current:
+            self._proc_combo.lineEdit().setText(current)
 
-        self._loss_curve = plot.plot(
-            [],
-            [],
-            pen=pg.mkPen(C_RED, width=1),
-            fillLevel=0,
-            brush=pg.mkBrush(QColor(248, 81, 73, 60)),
-        )
-        return plot
-
-    def _build_stats_panel(self) -> QWidget:
-        panel = QWidget()
-        panel.setStyleSheet(f"background: {C_BG};")
-        outer = QVBoxLayout(panel)
-        outer.setContentsMargins(4, 4, 4, 4)
-        outer.setSpacing(4)
-
-        grid = QGridLayout()
-        grid.setSpacing(5)
-        defs = [
-            ("last_rtt", "Last RTT", 0, 0),
-            ("rtt_avg", "Avg RTT", 0, 1),
-            ("rtt_min", "Min RTT", 0, 2),
-            ("rtt_max", "Max RTT", 0, 3),
-            ("jitter", "Jitter", 0, 4),
-            ("rtt_stddev", "Std Dev", 0, 5),
-            ("loss_pct", "Pkt Loss", 1, 0),
-            ("last_ttl", "TTL", 1, 1),
-            ("samples", "Samples", 1, 2),
-            ("received", "Received", 1, 3),
-            ("lost", "Lost", 1, 4),
-            ("_uptime", "Uptime", 1, 5),
-        ]
-
-        self._stat_boxes: dict[str, StatBox] = {}
-        for key, label, row, col in defs:
-            box = StatBox(label)
-            self._stat_boxes[key] = box
-            grid.addWidget(box, row, col)
-
-        outer.addLayout(grid)
-        return panel
-
-    def _on_user_zoom(self, axes):
-        if not self._user_zoomed:
-            self._user_zoomed = True
-            self._reset_zoom_btn.setText("↺ Live View")
-            self._reset_zoom_btn.setStyleSheet(
-                "font-size: 8pt; padding: 2px 6px; "
-                "background-color: #1a4731; border-color: #2ea043; color: #3fb950; font-weight: bold;"
+    def _toggle_watch(self, checked: bool):
+        if checked:
+            name = self._proc_combo.currentText().strip()
+            if not name:
+                self._watch_btn.setChecked(False)
+                return
+            self._watcher.watch(name)
+            self._status_lbl.setText(
+                f"Watching for '{name}'…  (will auto-add connections when found)"
             )
-            self._reset_zoom_btn.setToolTip("Zoom is active — click to return to live auto-scrolling view")
+            self._watch_btn.setText("Stop")
+            self._watch_btn.setObjectName("stopBtn")
+            self._watch_btn.setStyle(self._watch_btn.style())
+        else:
+            self._watcher.stop()
+            self._watch_btn.setText("Watch")
+            self._watch_btn.setObjectName("startBtn")
+            self._watch_btn.setStyle(self._watch_btn.style())
+            self._status_lbl.setText("Watch stopped.")
+
+    @Slot(str, int)
+    def _on_process_found(self, name: str, pid: int):
+        self._status_lbl.setText(f"Found '{name}' (PID {pid}) — scanning connections…")
+
+    @Slot(list)
+    def _on_connections_found(self, ips: list):
+        added = 0
+        for ip in ips:
+            if self.add_session(ip):
+                added += 1
+        if added:
+            self._status_lbl.setText(
+                f"Auto-added {added} connection{'s' if added != 1 else ''} from process."
+            )
+
+    # ------------------------------------------------------------------
+    # Session management
+    # ------------------------------------------------------------------
+    def _next_color(self) -> str:
+        color = SESSION_COLORS[self._color_idx % len(SESSION_COLORS)]
+        self._color_idx += 1
+        return color
+
+    def add_session(self, host: str, label: Optional[str] = None) -> Optional[_PingSession]:
+        """Start monitoring host.  Returns the session, or None if already monitored."""
+        host = host.strip()
+        if not host:
+            return None
+        for s in self._sessions:
+            if s.host == host:
+                self._status_lbl.setText(f"Already monitoring {host}.")
+                return None
+
+        label = label or host
+        color = self._next_color()
+        session = _PingSession(
+            host=host, label=label, color=color,
+            interval_ms=self._interval_ms,
+            timeout_ms=self._timeout_ms,
+            window=self._window,
+        )
+
+        sid = session.id
+        session.engine.result_ready.connect(lambda r, _sid=sid: self._on_result(_sid, r))
+        session.engine.stats_updated.connect(lambda st, _sid=sid: self._on_stats(_sid, st))
+        session.engine.start()
+
+        self._sessions.append(session)
+        self._add_table_row(session)
+        self._add_graph_curve(session)
+        self._add_to_history(host)
+
+        self.session_started.emit(host)
+        self._stop_all_btn.setEnabled(True)
+        self.any_running_changed.emit(True)
+        self._status_lbl.setText(f"Monitoring {len(self._sessions)} session(s).")
+        return session
+
+    def stop_session(self, session_id: int):
+        idx = next((i for i, s in enumerate(self._sessions) if s.id == session_id), None)
+        if idx is None:
+            return
+        session = self._sessions[idx]
+        session.engine.stop()
+
+        if session.plot_curve is not None:
+            try:
+                self._legend.removeItem(session.plot_curve)
+            except Exception:
+                pass
+            self._plot.removeItem(session.plot_curve)
+
+        for row in range(self._table.rowCount()):
+            btn = self._table.cellWidget(row, 8)
+            if btn and getattr(btn, '_session_id', None) == session_id:
+                self._table.removeRow(row)
+                break
+
+        self._sessions.pop(idx)
+        self._stop_all_btn.setEnabled(bool(self._sessions))
+        if not self._sessions:
+            self.any_running_changed.emit(False)
+            self._status_lbl.setText("All sessions stopped.")
+        else:
+            self._status_lbl.setText(f"Monitoring {len(self._sessions)} session(s).")
+
+    def stop_all(self):
+        for s in list(self._sessions):
+            s.engine.stop()
+            if s.plot_curve is not None:
+                self._plot.removeItem(s.plot_curve)
+        try:
+            self._legend.clear()
+        except Exception:
+            pass
+        self._sessions.clear()
+        self._table.setRowCount(0)
+        self._stop_all_btn.setEnabled(False)
+        self.any_running_changed.emit(False)
+        self._status_lbl.setText("All sessions stopped.")
+
+    def pause_all(self):
+        for s in self._sessions:
+            s.engine.pause()
+
+    def resume_all(self):
+        for s in self._sessions:
+            s.engine.resume()
+
+    @property
+    def any_paused(self) -> bool:
+        return any(s.engine.is_paused for s in self._sessions)
+
+    # ------------------------------------------------------------------
+    # Table
+    # ------------------------------------------------------------------
+    def _add_table_row(self, session: _PingSession):
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+
+        dot = QLabel("●")
+        dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dot.setStyleSheet(f"color: {session.color}; font-size: 12pt;")
+        self._table.setCellWidget(row, 0, dot)
+
+        self._table.setItem(
+            row, 1,
+            self._mk_cell(session.label,
+                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        )
+        for col in range(2, 8):
+            self._table.setItem(row, col, self._mk_cell("…"))
+
+        btn = QPushButton("×")
+        btn.setFixedSize(22, 22)
+        btn.setStyleSheet(
+            "QPushButton { color: #f85149; background: transparent; border: none; "
+            "font-size: 14pt; font-weight: bold; }"
+            "QPushButton:hover { color: #ff7b72; }"
+        )
+        btn._session_id = session.id
+        btn.clicked.connect(lambda _checked, sid=session.id: self.stop_session(sid))
+        self._table.setCellWidget(row, 8, btn)
+
+    def _mk_cell(self, text: str,
+                 align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(align)
+        return item
+
+    def _refresh_table(self):
+        for row in range(self._table.rowCount()):
+            btn = self._table.cellWidget(row, 8)
+            if not btn:
+                continue
+            sid = getattr(btn, '_session_id', None)
+            if sid is None:
+                continue
+            session = next((s for s in self._sessions if s.id == sid), None)
+            if not session or not session.stats:
+                continue
+            stats = session.stats
+            rtt = stats.last_rtt
+
+            dot = self._table.cellWidget(row, 0)
+            if dot:
+                if rtt is None or stats.loss_pct > 10:
+                    health = "#f85149"
+                elif stats.loss_pct > 2 or (rtt is not None and rtt > 150):
+                    health = "#d29922"
+                else:
+                    health = "#3fb950"
+                dot.setStyleSheet(f"color: {health}; font-size: 12pt;")
+
+            rtt_str  = f"{rtt:.0f} ms" if rtt is not None else "Timeout"
+            loss_str = f"{stats.loss_pct:.1f}%"
+            min_str  = f"{stats.rtt_min:.0f}" if stats.rtt_min is not None else "-"
+            max_str  = f"{stats.rtt_max:.0f}" if stats.rtt_max is not None else "-"
+            avg_str  = f"{stats.rtt_avg:.0f}" if stats.rtt_avg is not None else "-"
+
+            for col, text in enumerate(
+                [rtt_str, loss_str, min_str, max_str, avg_str, str(stats.samples)], start=2
+            ):
+                item = self._table.item(row, col)
+                if item:
+                    item.setText(text)
+                    if col == 2:
+                        if rtt is None:
+                            item.setForeground(QColor("#f85149"))
+                        elif rtt > 150:
+                            item.setForeground(QColor("#d29922"))
+                        else:
+                            item.setForeground(QColor("#c9d1d9"))
+
+    # ------------------------------------------------------------------
+    # Graph
+    # ------------------------------------------------------------------
+    def _add_graph_curve(self, session: _PingSession):
+        curve = pg.PlotDataItem(
+            pen=pg.mkPen(color=session.color, width=2),
+            name=session.label,
+            connect='finite',
+        )
+        self._plot.addItem(curve)
+        session.plot_curve = curve
+
+    def _update_graph_curve(self, session: _PingSession):
+        if session.plot_curve is None:
+            return
+        results = list(session.results)
+        if not results:
+            return
+        y = [r.rtt_ms if r.rtt_ms is not None else float('nan') for r in results]
+        x = list(range(len(y)))
+        session.plot_curve.setData(x=x, y=y)
+        if not self._user_zoomed:
+            n = len(y)
+            if n > self._window:
+                self._plot.setXRange(n - self._window, n, padding=0.02)
+
+    def _on_user_zoom(self):
+        self._user_zoomed = True
+        self._zoom_btn.setText("↺ Live View")
+        self._zoom_btn.setStyleSheet("QPushButton { color: #3fb950; font-weight: bold; }")
 
     def _reset_zoom(self):
         self._user_zoomed = False
-        self._rtt_plot.enableAutoRange()
-        self._reset_zoom_btn.setText("● Live")
-        self._reset_zoom_btn.setStyleSheet(
-            "font-size: 8pt; padding: 2px 6px; color: #3fb950;"
-        )
-        self._reset_zoom_btn.setToolTip("Click to return to live auto-scrolling view")
+        self._plot.enableAutoRange()
+        self._zoom_btn.setText("● Live")
+        self._zoom_btn.setStyleSheet("")
 
-    def set_engine(self, engine: PingEngine, graph_window: int):
-        if self._engine:
-            try:
-                self._engine.result_ready.disconnect(self._on_result)
-                self._engine.stats_updated.disconnect(self._on_stats)
-            except Exception:
-                pass
+    # ------------------------------------------------------------------
+    # View toggle
+    # ------------------------------------------------------------------
+    def _set_view(self, mode: int):
+        self._view_mode = mode
+        self._stack.setCurrentIndex(mode)
+        self._table_btn.setChecked(mode == self.VIEW_TABLE)
+        self._graph_btn.setChecked(mode == self.VIEW_GRAPH)
+        if mode == self.VIEW_GRAPH:
+            for s in self._sessions:
+                self._update_graph_curve(s)
 
-        self._engine = engine
-        self._graph_window = graph_window
-        self._times.clear()
-        self._rtts.clear()
-        self._start_ts = time.time()
-        self._last_stats = None
-        self._user_zoomed = False
-        self._reset_zoom_btn.setText("● Live")
-        self._reset_zoom_btn.setStyleSheet(
-            "font-size: 8pt; padding: 2px 6px; color: #3fb950;"
-        )
-        self._engine.result_ready.connect(self._on_result)
-        self._engine.stats_updated.connect(self._on_stats)
-        self._rtt_plot.enableAutoRange()
-        self._loss_plot.enableAutoRange()
-
-    @Slot(object)
-    def _on_result(self, result: PingResult):
-        self._times.append(result.timestamp.timestamp())
-        self._rtts.append(result.rtt_ms)
-
-    @Slot(object)
-    def _on_stats(self, stats: PingStats):
-        self._last_stats = stats
-        self._update_stat_boxes(stats)
-
-    def _refresh_graph(self):
-        if not self._times:
+    # ------------------------------------------------------------------
+    # Engine signal handlers
+    # ------------------------------------------------------------------
+    def _on_result(self, session_id: int, result: PingResult):
+        session = next((s for s in self._sessions if s.id == session_id), None)
+        if not session:
             return
+        session.results.append(result)
+        if self._view_mode == self.VIEW_GRAPH:
+            self._update_graph_curve(session)
 
-        times = list(self._times)[-self._graph_window :]
-        rtts = list(self._rtts)[-self._graph_window :]
-
-        self._rtt_line.setData(
-            x=np.array(times, dtype=float),
-            y=np.array([value if value is not None else np.nan for value in rtts], dtype=float),
-        )
-
-        threshold = self._get_rtt_threshold()
-        valid_values = [value for value in rtts if value is not None]
-
-        if not self._user_zoomed:
-            if len(times) >= 2:
-                self._rtt_plot.setXRange(times[0], times[-1], padding=0.02)
-            if valid_values:
-                self._rtt_plot.setYRange(
-                    0,
-                    max(max(valid_values) * 1.25, threshold * 1.15, 10.0),
-                    padding=0,
-                )
-
-        spots = []
-        for timestamp, rtt in zip(times, rtts):
-            if rtt is not None:
-                spots.append(
-                    {
-                        "pos": (timestamp, rtt),
-                        "brush": pg.mkBrush(QColor(_rtt_color(rtt, threshold))),
-                        "size": 5,
-                    }
-                )
-        self._rtt_scatter.setData(spots)
-
-        lost_timestamps = [timestamp for timestamp, rtt in zip(times, rtts) if rtt is None]
-        if lost_timestamps:
-            self._lost_scatter.setData(x=lost_timestamps, y=[2.0] * len(lost_timestamps))
-        else:
-            self._lost_scatter.setData([], [])
-
-        if self._last_stats and self._last_stats.rtt_avg is not None and times:
-            avg = self._last_stats.rtt_avg
-            self._avg_line.setValue(avg)
-            self._avg_label.setText(f"avg {avg:.1f} ms")
-            self._avg_label.setPos(times[-1], avg)
-
-        if times:
-            self._thresh_line.setValue(threshold)
-            self._thresh_label.setText(f"alert >{threshold:.0f} ms")
-            self._thresh_label.setPos(times[-1], threshold)
-
-        self._refresh_loss_chart(times, rtts)
-
-    def _refresh_loss_chart(self, times, rtts):
-        bucket = 10
-        if len(rtts) < bucket:
-            self._loss_curve.setData([], [])
+    def _on_stats(self, session_id: int, stats: PingStats):
+        session = next((s for s in self._sessions if s.id == session_id), None)
+        if not session:
             return
+        session.stats = stats
+        self._emit_worst_stats()
 
-        xs, ys = [], []
-        for index in range(bucket, len(rtts) + 1, bucket):
-            chunk = rtts[index - bucket : index]
-            lost = sum(1 for value in chunk if value is None)
-            xs.append(times[index - 1])
-            ys.append(lost / bucket * 100)
+    def _emit_worst_stats(self):
+        active = [s for s in self._sessions if s.stats is not None]
+        if not active:
+            return
+        worst = max(active, key=lambda s: (s.stats.loss_pct, s.stats.last_rtt or 0))
+        self.worst_stats_updated.emit(worst.stats)
+        self._alert_mgr.check(worst.stats)
 
-        self._loss_curve.setData(x=np.array(xs, dtype=float), y=np.array(ys, dtype=float))
-        if xs and len(times) >= 2:
-            self._loss_plot.setXRange(times[0], times[-1], padding=0.02)
+    # ------------------------------------------------------------------
+    # Manual start
+    # ------------------------------------------------------------------
+    def _on_start_clicked(self):
+        host = self._host_combo.currentText().strip()
+        if host:
+            self.add_session(host)
 
-    def _get_rtt_threshold(self) -> float:
-        for rule in self._alert_mgr.rules:
-            if rule.metric == "last_rtt" and rule.operator in (">", ">=") and rule.enabled:
-                return rule.threshold
-        return 100.0
+    # ------------------------------------------------------------------
+    # History combo (persisted by MainWindow via get_history/load_history)
+    # ------------------------------------------------------------------
+    def _add_to_history(self, host: str):
+        idx = self._host_combo.findText(host)
+        if idx >= 0:
+            self._host_combo.removeItem(idx)
+        self._host_combo.insertItem(0, host)
+        self._host_combo.setCurrentIndex(0)
+        while self._host_combo.count() > 15:
+            self._host_combo.removeItem(self._host_combo.count() - 1)
 
-    def _update_stat_boxes(self, stats: PingStats):
-        threshold = self._get_rtt_threshold()
+    def get_history(self) -> list:
+        return [self._host_combo.itemText(i) for i in range(self._host_combo.count())]
 
-        def ms(value):
-            return f"{value:.1f} ms" if value is not None else "-"
+    def load_history(self, items: list):
+        self._host_combo.clear()
+        for host in items:
+            self._host_combo.addItem(host)
+        if not self._host_combo.count():
+            self._host_combo.addItem("google.com")
 
-        def colored_rtt(value):
-            if value is None:
-                return "-", C_MUTED
-            return f"{value:.1f} ms", _rtt_color(value, threshold)
-
-        value, color = colored_rtt(stats.last_rtt)
-        self._stat_boxes["last_rtt"].set_value(value, color)
-        self._stat_boxes["rtt_avg"].set_value(ms(stats.rtt_avg))
-        self._stat_boxes["rtt_min"].set_value(ms(stats.rtt_min))
-        self._stat_boxes["rtt_max"].set_value(ms(stats.rtt_max))
-        self._stat_boxes["jitter"].set_value(ms(stats.jitter))
-        self._stat_boxes["rtt_stddev"].set_value(ms(stats.rtt_stddev))
-
-        loss_color = C_GREEN if stats.loss_pct == 0 else (C_YELLOW if stats.loss_pct < 5 else C_RED)
-        self._stat_boxes["loss_pct"].set_value(f"{stats.loss_pct:.1f}%", loss_color)
-        self._stat_boxes["last_ttl"].set_value(str(stats.last_ttl) if stats.last_ttl else "-")
-        self._stat_boxes["samples"].set_value(str(stats.samples))
-        self._stat_boxes["received"].set_value(str(stats.received), C_GREEN if stats.received else C_MUTED)
-        self._stat_boxes["lost"].set_value(str(stats.lost), C_RED if stats.lost else C_TEXT)
-
-        if stats.session_start:
-            elapsed = datetime.datetime.now() - stats.session_start
-            hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
-            minutes, seconds = divmod(remainder, 60)
-            self._stat_boxes["_uptime"].set_value(f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+    # ------------------------------------------------------------------
+    # Export support
+    # ------------------------------------------------------------------
+    def get_all_results(self) -> list:
+        """Return list of (session_label, PingResult) tuples for CSV export."""
+        rows = []
+        for s in self._sessions:
+            for r in s.results:
+                rows.append((s.label, r))
+        return rows

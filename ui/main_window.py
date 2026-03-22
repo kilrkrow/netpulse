@@ -4,13 +4,11 @@ import csv
 import datetime
 import json
 import os
-from collections import deque
 
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -29,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from core.alerts import AlertManager
 from core.dossier import DossierEngine
-from core.ping_engine import PingEngine, PingResult, PingStats
+from core.ping_engine import PingStats
 from core.traceroute import TracerouteEngine
 from ui.alerts_tab import AlertsTab
 from ui.dossier_tab import DossierTab
@@ -59,10 +57,8 @@ class MainWindow(QMainWindow):
         self.resize(1200, 750)
         self.setMinimumSize(900, 600)
 
-        self._engine: PingEngine | None = None
         self._current_stats: PingStats | None = None
         self._session_start: datetime.datetime | None = None
-        self._history: deque[PingResult] = deque(maxlen=20000)
 
         self._alert_mgr = AlertManager()
         self._tracer = TracerouteEngine()
@@ -105,7 +101,7 @@ class MainWindow(QMainWindow):
         self._status_bar.setStyleSheet("QStatusBar { border-top: 1px solid #30363d; }")
         self.setStatusBar(self._status_bar)
 
-        self._sb_label = QLabel("Ready - enter a host and press Start")
+        self._sb_label = QLabel("Ready — add a target on the Monitor tab to start")
         self._sb_label.setStyleSheet("color: #8b949e; padding: 2px 6px;")
         self._status_bar.addWidget(self._sb_label)
 
@@ -129,16 +125,6 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(8)
-
-        layout.addWidget(QLabel("Target:"))
-        self._host_combo = QComboBox()
-        self._host_combo.setEditable(True)
-        self._host_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._host_combo.lineEdit().setPlaceholderText("hostname or IP (e.g. google.com)")
-        self._host_combo.addItem("google.com")
-        self._host_combo.setMinimumWidth(220)
-        self._host_combo.lineEdit().returnPressed.connect(self._start)
-        layout.addWidget(self._host_combo)
 
         layout.addWidget(QLabel("Interval:"))
         self._interval_spin = QSpinBox()
@@ -165,19 +151,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._window_spin)
 
         layout.addStretch()
-
-        self._start_btn = QPushButton("Start")
-        self._start_btn.setObjectName("startBtn")
-        self._start_btn.setFixedWidth(90)
-        self._start_btn.clicked.connect(self._start)
-        layout.addWidget(self._start_btn)
-
-        self._stop_btn = QPushButton("Stop")
-        self._stop_btn.setObjectName("stopBtn")
-        self._stop_btn.setFixedWidth(90)
-        self._stop_btn.setEnabled(False)
-        self._stop_btn.clicked.connect(self._stop)
-        layout.addWidget(self._stop_btn)
 
         self._export_btn = QPushButton("Export")
         self._export_btn.setFixedWidth(90)
@@ -212,6 +185,31 @@ class MainWindow(QMainWindow):
         self._tray.show()
 
     # ------------------------------------------------------------------
+    # Signal wiring
+    # ------------------------------------------------------------------
+    def _connect_signals(self):
+        # Toolbar spins → MonitorTab defaults
+        self._interval_spin.valueChanged.connect(self._monitor_tab.set_interval)
+        self._timeout_spin.valueChanged.connect(self._monitor_tab.set_timeout)
+        self._window_spin.valueChanged.connect(self._monitor_tab.set_window)
+
+        # MonitorTab → MainWindow
+        self._monitor_tab.worst_stats_updated.connect(self._on_stats)
+        self._monitor_tab.session_started.connect(self._on_session_started)
+        self._monitor_tab.any_running_changed.connect(self._on_any_running_changed)
+
+        # Alert manager
+        self._alert_mgr.alert_triggered.connect(self._on_alert)
+
+        # Traceroute pause/resume
+        self._tracer.started.connect(self._on_tracer_started)
+        self._tracer.finished.connect(self._on_tracer_done)
+        self._tracer.error_occurred.connect(self._on_tracer_error)
+
+        # Dossier history save
+        self._dossier.finished.connect(self._on_dossier_done)
+
+    # ------------------------------------------------------------------
     # History persistence
     # ------------------------------------------------------------------
     def _history_file(self) -> str:
@@ -224,11 +222,7 @@ class MainWindow(QMainWindow):
         try:
             with open(self._history_file(), encoding='utf-8') as f:
                 data = json.load(f)
-            self._host_combo.clear()
-            for host in data.get('ping', ['google.com']):
-                self._host_combo.addItem(host)
-            if not self._host_combo.count():
-                self._host_combo.addItem('google.com')
+            self._monitor_tab.load_history(data.get('ping', ['google.com']))
             self._tracer_tab.load_history(data.get('tracert', []))
             self._dossier_tab.load_history(data.get('dossier', []))
         except Exception:
@@ -237,7 +231,7 @@ class MainWindow(QMainWindow):
     def _save_history(self):
         try:
             data = {
-                'ping':    [self._host_combo.itemText(i) for i in range(self._host_combo.count())],
+                'ping':    self._monitor_tab.get_history(),
                 'tracert': self._tracer_tab.get_history(),
                 'dossier': self._dossier_tab.get_history(),
             }
@@ -246,118 +240,59 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def _connect_signals(self):
-        self._alert_mgr.alert_triggered.connect(self._on_alert)
-        self._tracer.started.connect(self._on_tracer_started)
-        self._tracer.finished.connect(self._on_tracer_done)
-        self._tracer.error_occurred.connect(self._on_tracer_error)
-        self._dossier.finished.connect(self._on_dossier_done)
-
-    def _add_host_to_history(self, host: str):
-        """Add host to ping combo history and push to tracert tab (non-destructively)."""
-        combo = self._host_combo
-        idx = combo.findText(host)
-        if idx >= 0:
-            combo.removeItem(idx)
-        combo.insertItem(0, host)
-        combo.setCurrentIndex(0)
-        while combo.count() > 15:
-            combo.removeItem(combo.count() - 1)
+    # ------------------------------------------------------------------
+    # MonitorTab signal handlers
+    # ------------------------------------------------------------------
+    @Slot(str)
+    def _on_session_started(self, host: str):
+        """Push the new host into tracert/dossier history and save."""
         self._tracer_tab.add_to_history(host)
+        self._dossier_tab.notify_host(host)
+        self._session_start = self._session_start or datetime.datetime.now()
         self._save_history()
 
+    @Slot(bool)
+    def _on_any_running_changed(self, running: bool):
+        if not running:
+            self._session_start = None
+            self._tray.setIcon(_make_tray_icon("#8b949e"))
+            self._tray.setToolTip("NetPulse - Stopped")
+            self._tray_status_action.setText("Stopped")
+            self._sb_label.setText("  Ready — add a target on the Monitor tab to start")
+            self._sb_right.setText("")
+
+    @Slot(object)
+    def _on_stats(self, stats: PingStats):
+        self._current_stats = stats
+        self._update_tray_icon(stats)
+
+    # ------------------------------------------------------------------
+    # Traceroute pause / resume
+    # ------------------------------------------------------------------
     @Slot()
     def _on_tracer_started(self):
-        if self._engine and self._engine.is_running:
-            self._engine.pause()
+        if self._monitor_tab.any_paused is False and self._current_stats:
+            self._monitor_tab.pause_all()
             self._sb_label.setText(
-                f"  ⏸ Ping paused — traceroute in progress  ({self._engine.host})"
+                f"  ⏸ Ping paused — traceroute in progress  ({self._current_stats.host})"
             )
 
     @Slot(list)
     def _on_tracer_done(self, hops):
-        if self._engine and self._engine.is_running:
-            self._engine.resume()
+        self._monitor_tab.resume_all()
         self._save_history()
 
     @Slot(str)
     def _on_tracer_error(self, _msg: str):
-        if self._engine and self._engine.is_running:
-            self._engine.resume()
+        self._monitor_tab.resume_all()
 
     @Slot(int, object)
     def _on_dossier_done(self, request_id, result):
         self._save_history()
 
-    def _start(self):
-        host = self._host_combo.currentText().strip()
-        if not host:
-            return
-
-        if self._engine and self._engine.is_running:
-            self._stop()
-
-        self._start_btn.setText("Live")
-        self._start_btn.setEnabled(False)
-        self._stop_btn.setText("Stop")
-        self._stop_btn.setEnabled(False)
-        self._host_combo.setEnabled(False)
-        self._add_host_to_history(host)
-        self._sb_label.setText(f"  Starting {host}...")
-        QApplication.processEvents()
-
-        self._history.clear()
-        self._session_start = datetime.datetime.now()
-
-        self._engine = PingEngine(
-            host=host,
-            interval_ms=self._interval_spin.value(),
-            timeout_ms=self._timeout_spin.value(),
-            window=3600,
-        )
-        self._engine.result_ready.connect(self._on_result)
-        self._engine.stats_updated.connect(self._on_stats)
-
-        self._monitor_tab.set_engine(self._engine, self._window_spin.value())
-        self._tracer_tab.notify_host(host)
-        self._dossier_tab.notify_host(host)
-        self._engine.start()
-
-        self._stop_btn.setEnabled(True)
-        self._tray.setIcon(_make_tray_icon("#3fb950"))
-        self._tray.setToolTip(f"NetPulse - {host}")
-        self._tray_status_action.setText(f"Monitoring: {host}")
-
-    def _stop(self):
-        self._stop_btn.setText("Stopping...")
-        self._stop_btn.setEnabled(False)
-        self._start_btn.setEnabled(False)
-        QApplication.processEvents()
-
-        if self._engine:
-            self._engine.stop()
-            self._engine = None
-
-        self._start_btn.setText("Start")
-        self._start_btn.setEnabled(True)
-        self._stop_btn.setText("Stop")
-        self._stop_btn.setEnabled(False)
-        self._host_combo.setEnabled(True)
-        self._tray.setIcon(_make_tray_icon("#8b949e"))
-        self._tray.setToolTip("NetPulse - Stopped")
-        self._tray_status_action.setText("Stopped")
-        self._sb_label.setText("  Stopped - enter a host and press Start")
-
-    @Slot(object)
-    def _on_result(self, result: PingResult):
-        self._history.append(result)
-
-    @Slot(object)
-    def _on_stats(self, stats: PingStats):
-        self._current_stats = stats
-        self._alert_mgr.check(stats)
-        self._update_tray_icon(stats)
-
+    # ------------------------------------------------------------------
+    # Tray icon
+    # ------------------------------------------------------------------
     def _update_tray_icon(self, stats: PingStats):
         rtt = stats.last_rtt
         loss = stats.loss_pct
@@ -381,6 +316,7 @@ class MainWindow(QMainWindow):
             self._tray.setToolTip(
                 f"NetPulse - {stats.host}\nRTT: {rtt:.0f}ms  Loss: {loss:.1f}%"
             )
+        self._tray_status_action.setText(f"Monitoring: {stats.host}")
 
     @Slot(object)
     def _on_alert(self, event):
@@ -391,15 +327,18 @@ class MainWindow(QMainWindow):
             5000,
         )
 
+    # ------------------------------------------------------------------
+    # Status bar
+    # ------------------------------------------------------------------
     def _update_status_bar(self):
+        if self._monitor_tab.any_paused:
+            return  # keep the "paused" message visible
         if not self._current_stats:
             return
-        if self._engine and self._engine.is_paused:
-            return  # keep the "paused" message visible
         stats = self._current_stats
         rtt_str = f"{stats.last_rtt:.0f} ms" if stats.last_rtt is not None else "Timeout"
         self._sb_label.setText(
-            f"  Host: {stats.host}    RTT: {rtt_str}    "
+            f"  {stats.host}    RTT: {rtt_str}    "
             f"Loss: {stats.loss_pct:.1f}%    Samples: {stats.samples}"
         )
         if self._session_start:
@@ -408,37 +347,40 @@ class MainWindow(QMainWindow):
             minutes, seconds = divmod(remainder, 60)
             self._sb_right.setText(f"Session: {hours:02d}:{minutes:02d}:{seconds:02d}")
 
+    # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
     def _export_csv(self):
-        if not self._history:
+        all_results = self._monitor_tab.get_all_results()
+        if not all_results:
             QMessageBox.information(self, "Export", "No data to export yet.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Ping History",
-            "netpulse_export.csv",
-            "CSV Files (*.csv)",
+            self, "Export Ping History", "netpulse_export.csv", "CSV Files (*.csv)"
         )
         if not path:
             return
 
         with open(path, "w", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["Timestamp", "Host", "Seq", "RTT_ms", "TTL", "IP", "Error"])
-            for result in self._history:
-                writer.writerow(
-                    [
-                        result.timestamp.isoformat(),
-                        result.host,
-                        result.seq,
-                        result.rtt_ms if result.rtt_ms is not None else "",
-                        result.ttl or "",
-                        result.resolved_ip or "",
-                        result.error or "",
-                    ]
-                )
+            writer.writerow(["Session", "Timestamp", "Host", "Seq", "RTT_ms", "TTL", "IP", "Error"])
+            for label, result in all_results:
+                writer.writerow([
+                    label,
+                    result.timestamp.isoformat(),
+                    result.host,
+                    result.seq,
+                    result.rtt_ms if result.rtt_ms is not None else "",
+                    result.ttl or "",
+                    result.resolved_ip or "",
+                    result.error or "",
+                ])
         QMessageBox.information(self, "Export", f"Saved to:\n{path}")
 
+    # ------------------------------------------------------------------
+    # Window / tray helpers
+    # ------------------------------------------------------------------
     def closeEvent(self, event):
         event.ignore()
         self.hide()
