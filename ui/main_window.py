@@ -248,7 +248,9 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         self._alert_mgr.alert_triggered.connect(self._on_alert)
+        self._tracer.started.connect(self._on_tracer_started)
         self._tracer.finished.connect(self._on_tracer_done)
+        self._tracer.error_occurred.connect(self._on_tracer_error)
         self._dossier.finished.connect(self._on_dossier_done)
 
     def _add_host_to_history(self, host: str):
@@ -264,9 +266,24 @@ class MainWindow(QMainWindow):
         self._tracer_tab.add_to_history(host)
         self._save_history()
 
+    @Slot()
+    def _on_tracer_started(self):
+        if self._engine and self._engine.is_running:
+            self._engine.pause()
+            self._sb_label.setText(
+                f"  ⏸ Ping paused — traceroute in progress  ({self._engine.host})"
+            )
+
     @Slot(list)
     def _on_tracer_done(self, hops):
+        if self._engine and self._engine.is_running:
+            self._engine.resume()
         self._save_history()
+
+    @Slot(str)
+    def _on_tracer_error(self, _msg: str):
+        if self._engine and self._engine.is_running:
+            self._engine.resume()
 
     @Slot(int, object)
     def _on_dossier_done(self, request_id, result):
@@ -377,6 +394,8 @@ class MainWindow(QMainWindow):
     def _update_status_bar(self):
         if not self._current_stats:
             return
+        if self._engine and self._engine.is_paused:
+            return  # keep the "paused" message visible
         stats = self._current_stats
         rtt_str = f"{stats.last_rtt:.0f} ms" if stats.last_rtt is not None else "Timeout"
         self._sb_label.setText(

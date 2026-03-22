@@ -101,6 +101,7 @@ class _PingWorker(QObject):
         self.timeout_ms = timeout_ms
         self.window = window
         self._running = False
+        self._paused = False
         self._seq = 0
         self._history: Deque[PingResult] = deque(maxlen=window)
         self._session_start: Optional[datetime.datetime] = None
@@ -110,6 +111,9 @@ class _PingWorker(QObject):
         self._running = True
         self._session_start = datetime.datetime.now()
         while self._running:
+            if self._paused:
+                time.sleep(0.05)
+                continue
             t_start = time.monotonic()
             result = self._ping_once()
             self._history.append(result)
@@ -124,6 +128,12 @@ class _PingWorker(QObject):
 
     def stop(self):
         self._running = False
+
+    def pause(self):
+        self._paused = True
+
+    def resume(self):
+        self._paused = False
 
     def _ping_once(self) -> PingResult:
         self._seq += 1
@@ -222,6 +232,18 @@ class PingEngine(QObject):
             self._thread.wait(5000)
         self._thread = None
         self._worker = None
+
+    def pause(self):
+        if self._worker:
+            self._worker.pause()
+
+    def resume(self):
+        if self._worker:
+            self._worker.resume()
+
+    @property
+    def is_paused(self) -> bool:
+        return bool(self._worker and self._worker._paused)
 
     def update_settings(self, interval_ms: int, timeout_ms: int):
         was_running = self.is_running
