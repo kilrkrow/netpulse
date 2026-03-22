@@ -25,3 +25,6 @@ Thumbs.db
 
 # Editor temp files
 *.tmp*
+
+# Build log (regenerated each build)
+build.log
