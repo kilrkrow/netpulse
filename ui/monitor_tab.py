@@ -1,6 +1,7 @@
 """Monitor tab: multi-session ping with live table and overlay-graph views."""
 
 import itertools
+import time
 from collections import deque
 from typing import List, Optional
 
@@ -56,6 +57,7 @@ class _PingSession:
         self.results: deque = deque(maxlen=window)
         self.stats: Optional[PingStats] = None
         self.plot_curve: Optional[pg.PlotDataItem] = None
+        self.running: bool = True   # False once stopped (data preserved)
 
 
 class MonitorTab(QWidget):
@@ -75,9 +77,11 @@ class MonitorTab(QWidget):
         super().__init__(parent)
         self._alert_mgr = alert_mgr
         self._sessions: List[_PingSession] = []
+        self._archived_sessions: list = []   # [(label, [PingResult, ...])] for closed sessions
         self._color_idx = 0
         self._view_mode = self.VIEW_TABLE
         self._user_zoomed = False
+        self._t0: Optional[float] = None   # Unix epoch of first session; graph x origin
 
         # Defaults — kept in sync with MainWindow toolbar spins
         self._interval_ms = 1000
@@ -230,10 +234,13 @@ class MonitorTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        self._plot = pg.PlotWidget(background="#0d1117")
+        self._plot = pg.PlotWidget(
+            background="#0d1117",
+            axisItems={'bottom': pg.DateAxisItem(orientation='bottom')},
+        )
         self._plot.showGrid(x=True, y=True, alpha=0.15)
         self._plot.setLabel("left", "RTT (ms)")
-        self._plot.setLabel("bottom", "Sample")
+        self._plot.setLabel("bottom", "")
         self._plot.setMouseEnabled(x=True, y=True)
         for axis in ('left', 'bottom'):
             self._plot.getAxis(axis).setPen(pg.mkPen("#8b949e"))
@@ -345,12 +352,16 @@ class MonitorTab(QWidget):
         session.engine.stats_updated.connect(lambda st, _sid=sid: self._on_stats(_sid, st))
         session.engine.start()
 
+        if self._t0 is None:
+            self._t0 = time.time()
+
         self._sessions.append(session)
         self._add_table_row(session)
         self._add_graph_curve(session)
         self._add_to_history(host)
 
         self.session_started.emit(host)
+        self._stop_all_btn.setText("■ Stop All")
         self._stop_all_btn.setEnabled(True)
         self.any_running_changed.emit(True)
         self._status_lbl.setText(f"Monitoring {len(self._sessions)} session(s).")
@@ -362,6 +373,7 @@ class MonitorTab(QWidget):
             return
         session = self._sessions[idx]
         session.engine.stop()
+        self._archive_session(session)
 
         if session.plot_curve is not None:
             try:
@@ -385,19 +397,44 @@ class MonitorTab(QWidget):
             self._status_lbl.setText(f"Monitoring {len(self._sessions)} session(s).")
 
     def stop_all(self):
-        for s in list(self._sessions):
-            s.engine.stop()
+        """First click: stop engines, preserve data in table/graph.
+           Second click (when already all stopped): clear everything."""
+        any_running = any(s.running for s in self._sessions)
+        if any_running:
+            for s in self._sessions:
+                if s.running:
+                    s.engine.stop()
+                    s.running = False
+            self._stop_all_btn.setText("✕ Clear All")
+            self.any_running_changed.emit(False)
+            n = len(self._sessions)
+            self._status_lbl.setText(
+                f"{n} session{'s' if n != 1 else ''} stopped — data preserved.  "
+                f"Click 'Clear All' to remove."
+            )
+        else:
+            self._clear_all()
+
+    def _clear_all(self):
+        """Remove all sessions, rows, and graph curves completely."""
+        for s in self._sessions:
             if s.plot_curve is not None:
+                try:
+                    self._legend.removeItem(s.plot_curve)
+                except Exception:
+                    pass
                 self._plot.removeItem(s.plot_curve)
+        self._sessions.clear()
+        self._table.setRowCount(0)
         try:
             self._legend.clear()
         except Exception:
             pass
-        self._sessions.clear()
-        self._table.setRowCount(0)
+        self._t0 = None
+        self._stop_all_btn.setText("■ Stop All")
         self._stop_all_btn.setEnabled(False)
         self.any_running_changed.emit(False)
-        self._status_lbl.setText("All sessions stopped.")
+        self._status_lbl.setText("All sessions cleared.")
 
     def pause_all(self):
         for s in self._sessions:
@@ -459,6 +496,14 @@ class MonitorTab(QWidget):
             session = next((s for s in self._sessions if s.id == sid), None)
             if not session or not session.stats:
                 continue
+
+            # Stopped session — dim dot, freeze stats cells, skip live update
+            if not session.running:
+                dot = self._table.cellWidget(row, 0)
+                if dot:
+                    dot.setStyleSheet("color: #484f58; font-size: 12pt;")
+                continue
+
             stats = session.stats
             rtt = stats.last_rtt
 
@@ -511,12 +556,12 @@ class MonitorTab(QWidget):
         if not results:
             return
         y = [r.rtt_ms if r.rtt_ms is not None else float('nan') for r in results]
-        x = list(range(len(y)))
+        x = [r.timestamp.timestamp() for r in results]
         session.plot_curve.setData(x=x, y=y)
         if not self._user_zoomed:
-            n = len(y)
-            if n > self._window:
-                self._plot.setXRange(n - self._window, n, padding=0.02)
+            now = time.time()
+            window_secs = self._window * (self._interval_ms / 1000.0)
+            self._plot.setXRange(now - window_secs, now, padding=0.02)
 
     def _on_user_zoom(self):
         self._user_zoomed = True
@@ -525,7 +570,9 @@ class MonitorTab(QWidget):
 
     def _reset_zoom(self):
         self._user_zoomed = False
-        self._plot.enableAutoRange()
+        now = time.time()
+        window_secs = self._window * (self._interval_ms / 1000.0)
+        self._plot.setXRange(now - window_secs, now, padding=0.02)
         self._zoom_btn.setText("● Live")
         self._zoom_btn.setStyleSheet("")
 
@@ -546,7 +593,7 @@ class MonitorTab(QWidget):
     # ------------------------------------------------------------------
     def _on_result(self, session_id: int, result: PingResult):
         session = next((s for s in self._sessions if s.id == session_id), None)
-        if not session:
+        if not session or not session.running:
             return
         session.results.append(result)
         if self._view_mode == self.VIEW_GRAPH:
@@ -560,12 +607,12 @@ class MonitorTab(QWidget):
         self._emit_worst_stats()
 
     def _emit_worst_stats(self):
-        active = [s for s in self._sessions if s.stats is not None]
+        active = [s for s in self._sessions if s.stats is not None and s.running]
         if not active:
             return
         worst = max(active, key=lambda s: (s.stats.loss_pct, s.stats.last_rtt or 0))
         self.worst_stats_updated.emit(worst.stats)
-        self._alert_mgr.check(worst.stats)
+        self._alert_mgr.check(worst.stats, host=worst.host)
 
     # ------------------------------------------------------------------
     # Manual start
@@ -574,6 +621,11 @@ class MonitorTab(QWidget):
         host = self._host_combo.currentText().strip()
         if host:
             self.add_session(host)
+
+    def _archive_session(self, session: _PingSession):
+        """Save a closing session's results so they survive in the export."""
+        if session.results:
+            self._archived_sessions.append((session.label, list(session.results)))
 
     # ------------------------------------------------------------------
     # History combo (persisted by MainWindow via get_history/load_history)
@@ -601,8 +653,12 @@ class MonitorTab(QWidget):
     # Export support
     # ------------------------------------------------------------------
     def get_all_results(self) -> list:
-        """Return list of (session_label, PingResult) tuples for CSV export."""
+        """Return list of (session_label, PingResult) tuples for CSV export.
+        Includes results from sessions that have already been closed."""
         rows = []
+        for label, results in self._archived_sessions:
+            for r in results:
+                rows.append((label, r))
         for s in self._sessions:
             for r in s.results:
                 rows.append((s.label, r))

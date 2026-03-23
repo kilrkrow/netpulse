@@ -182,7 +182,10 @@ class MainWindow(QMainWindow):
 
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._tray_activated)
+        self._tray.messageClicked.connect(self._on_notification_clicked)
         self._tray.show()
+
+        self._last_alert_host: str = ""  # host from most recent alert notification
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -200,6 +203,9 @@ class MainWindow(QMainWindow):
 
         # Alert manager
         self._alert_mgr.alert_triggered.connect(self._on_alert)
+
+        # Traceroute → Monitor hop
+        self._tracer_tab.monitor_requested.connect(self._on_monitor_hop_requested)
 
         # Traceroute pause/resume
         self._tracer.started.connect(self._on_tracer_started)
@@ -286,6 +292,13 @@ class MainWindow(QMainWindow):
     def _on_tracer_error(self, _msg: str):
         self._monitor_tab.resume_all()
 
+    @Slot(str)
+    def _on_monitor_hop_requested(self, ip: str):
+        """Switch to Monitor tab and start pinging the requested hop IP."""
+        monitor_idx = self._tabs.indexOf(self._monitor_tab)
+        self._tabs.setCurrentIndex(monitor_idx)
+        self._monitor_tab.add_session(ip)
+
     @Slot(int, object)
     def _on_dossier_done(self, request_id, result):
         self._save_history()
@@ -320,12 +333,27 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_alert(self, event):
+        self._last_alert_host = event.host
+        msg = event.message
+        if event.host:
+            msg += "\n\nClick to run traceroute →"
         self._tray.showMessage(
             "NetPulse Alert",
-            event.message,
+            msg,
             QSystemTrayIcon.MessageIcon.Warning,
-            5000,
+            6000,
         )
+
+    @Slot()
+    def _on_notification_clicked(self):
+        """User clicked a tray alert balloon — open app and launch traceroute."""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if self._last_alert_host:
+            tracer_idx = self._tabs.indexOf(self._tracer_tab)
+            self._tabs.setCurrentIndex(tracer_idx)
+            self._tracer_tab.set_target(self._last_alert_host)
 
     # ------------------------------------------------------------------
     # Status bar

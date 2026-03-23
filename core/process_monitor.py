@@ -144,12 +144,12 @@ class ProcessWatcher(QObject):
         if not self._name:
             return
 
-        # Step 1: find the process if not yet seen
-        if not self._pids:
-            pids = get_pids_for_name(self._name)
-            if pids:
-                self._pids = pids
-                self.process_found.emit(self._name, pids[0])
+        # Step 1: refresh matching PIDs every poll so restarts/new instances are picked up
+        previous_pids = set(self._pids)
+        pids = get_pids_for_name(self._name)
+        self._pids = pids
+        if pids and not previous_pids:
+            self.process_found.emit(self._name, pids[0])
 
         # Step 2: scan connections for all known PIDs
         if self._pids:

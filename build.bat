@@ -11,11 +11,37 @@ if exist build.log del /f /q build.log
 REM Timestamp the log
 echo Build started: %DATE% %TIME% > build.log
 
-REM Use uv CPython (non-sandboxed) to seed the build venv
-set UV_PYTHON=C:\Users\guysc\AppData\Roaming\uv\python\cpython-3.12.11-windows-x86_64-none\python.exe
+REM ---------------------------------------------------------------------------
+REM  Locate a non-sandboxed Python to seed the build venv.
+REM
+REM  Priority order:
+REM    1. NETPULSE_PYTHON  – set this env var to override everything
+REM    2. uv python find 3.12  – asks uv to locate its managed CPython 3.12
+REM    3. python  – whatever is first on PATH (last resort)
+REM ---------------------------------------------------------------------------
 set VENV=.venv-build
 set PYTHON=%VENV%\Scripts\python.exe
 
+if defined NETPULSE_PYTHON (
+    set UV_PYTHON=%NETPULSE_PYTHON%
+    echo NETPULSE_PYTHON override: %UV_PYTHON% >> build.log
+    goto :python_found
+)
+
+REM Try "uv python find 3.12" (requires uv on PATH)
+for /f "usebackq delims=" %%P in (`uv python find 3.12 2^>nul`) do (
+    set UV_PYTHON=%%P
+)
+if defined UV_PYTHON (
+    echo uv python find: %UV_PYTHON% >> build.log
+    goto :python_found
+)
+
+REM Final fallback – plain python on PATH
+set UV_PYTHON=python
+echo WARNING: uv not found; falling back to PATH python >> build.log
+
+:python_found
 echo Using base Python: %UV_PYTHON% >> build.log
 "%UV_PYTHON%" --version >> build.log 2>&1
 
@@ -36,11 +62,27 @@ echo (This takes 1-3 minutes on first build)
 echo (Output also logged to build.log)
 echo.
 
-REM Output outside Dropbox to avoid sync-lock failures on clean rebuild
-set DISTPATH=C:\temp\NetPulse-dist
-set WORKPATH=C:\temp\NetPulse-work
+REM Output outside Dropbox to avoid sync-lock failures on clean rebuild.
+REM Uses %TEMP% (always set on Windows) unless overridden by env vars.
+if not defined NETPULSE_DISTPATH set NETPULSE_DISTPATH=%TEMP%\NetPulse-dist
+if not defined NETPULSE_WORKPATH set NETPULSE_WORKPATH=%TEMP%\NetPulse-work
+set DISTPATH=%NETPULSE_DISTPATH%
+set WORKPATH=%NETPULSE_WORKPATH%
 
 echo Build output: %DISTPATH% >> build.log
+
+REM Kill any running NetPulse instance so its DLLs aren't locked during clean
+echo Stopping any running NetPulse.exe... >> build.log
+taskkill /f /im NetPulse.exe > nul 2>&1
+echo Taskkill exit: %errorlevel% >> build.log
+
+REM Pre-delete dist ourselves so PyInstaller --clean never races with a lock
+if exist "%DISTPATH%" (
+    echo Pre-clearing dist folder... >> build.log
+    rmdir /s /q "%DISTPATH%" >> build.log 2>&1
+    REM Brief pause so the FS releases any residual handles
+    timeout /t 2 /nobreak > nul
+)
 
 REM Force pyqtgraph to use PySide6 (not PyQt6) during analysis
 set QT_API=PySide6

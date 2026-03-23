@@ -28,3 +28,6 @@ Thumbs.db
 
 # Build log (regenerated each build)
 build.log
+
+# Local secrets
+git token.txt

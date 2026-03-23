@@ -42,6 +42,7 @@ class AlertEvent:
     threshold: float
     operator: str
     message: str
+    host: str = ""
 
 
 def _evaluate(value: float, op: str, threshold: float) -> bool:
@@ -69,7 +70,7 @@ class AlertManager(QObject):
         """cb(title, message) — e.g., show a system tray balloon."""
         self._notify_callback = cb
 
-    def check(self, stats) -> List[AlertEvent]:
+    def check(self, stats, host: str = "") -> List[AlertEvent]:
         """Called on every PingStats update. Returns any new alerts."""
         now = datetime.datetime.now()
         fired: List[AlertEvent] = []
@@ -92,8 +93,9 @@ class AlertManager(QObject):
 
             rule.last_triggered = now
             metric_label, unit = METRICS.get(rule.metric, (rule.metric, ''))
+            host_prefix = f"[{host}] " if host else ""
             msg = (
-                f"{rule.name}: {metric_label} = {value:.1f}{unit} "
+                f"{host_prefix}{rule.name}: {metric_label} = {value:.1f}{unit} "
                 f"{rule.operator} {rule.threshold:.1f}{unit}"
             )
             event = AlertEvent(
@@ -104,6 +106,7 @@ class AlertManager(QObject):
                 threshold=rule.threshold,
                 operator=rule.operator,
                 message=msg,
+                host=host,
             )
             self.log.append(event)
             fired.append(event)

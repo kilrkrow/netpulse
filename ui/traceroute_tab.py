@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -45,6 +46,9 @@ def _fmt_rtt(value: Optional[float]) -> str:
 
 class TracerouteTab(QWidget):
     COLUMNS = ["Hop", "IP Address", "Hostname", "RTT 1", "RTT 2", "RTT 3", "Avg RTT", "Status"]
+
+    # Emitted when the user wants to monitor a hop IP in the Monitor tab
+    monitor_requested = Signal(str)   # ip address
 
     def __init__(self, engine: TracerouteEngine, parent=None):
         super().__init__(parent)
@@ -82,6 +86,17 @@ class TracerouteTab(QWidget):
         self._abort_btn.clicked.connect(self._abort)
         toolbar.addWidget(self._abort_btn)
 
+        self._monitor_path_btn = QPushButton("📡 Monitor Path")
+        self._monitor_path_btn.setObjectName("startBtn")
+        self._monitor_path_btn.setFixedWidth(140)
+        self._monitor_path_btn.setToolTip(
+            "Add all responding hops to the Monitor tab and start pinging them simultaneously.\n"
+            "Shows you exactly where latency or loss is introduced along the route."
+        )
+        self._monitor_path_btn.setEnabled(False)
+        self._monitor_path_btn.clicked.connect(self._monitor_all_hops)
+        toolbar.addWidget(self._monitor_path_btn)
+
         root.addLayout(toolbar)
 
         self._progress = QLabel('Click "Run Traceroute" to begin.')
@@ -105,6 +120,8 @@ class TracerouteTab(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(False)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._show_hop_menu)
         root.addWidget(self._table)
 
         self._summary = QLabel("")
@@ -137,6 +154,43 @@ class TracerouteTab(QWidget):
     def set_target(self, host: str):
         self.add_to_history(host)
 
+    def _show_hop_menu(self, pos):
+        """Right-click context menu on a traceroute table row."""
+        row = self._table.rowAt(pos.y())
+        if row < 0:
+            return
+        ip_item = self._table.item(row, 1)
+        ip = ip_item.text() if ip_item else ""
+        if not ip or ip == "*":
+            return
+
+        menu = QMenu(self)
+        monitor_action = menu.addAction(f"📡 Monitor {ip}")
+        monitor_action.triggered.connect(lambda: self.monitor_requested.emit(ip))
+
+        if row < len(self._hops) and self._hops[row].hostname:
+            hostname = self._hops[row].hostname
+            monitor_hn_action = menu.addAction(f"📡 Monitor {hostname}")
+            monitor_hn_action.triggered.connect(
+                lambda: self.monitor_requested.emit(hostname)
+            )
+
+        menu.addSeparator()
+        copy_action = menu.addAction("Copy IP")
+        copy_action.triggered.connect(
+            lambda: __import__("PySide6.QtWidgets", fromlist=["QApplication"])
+            .QApplication.clipboard()
+            .setText(ip)
+        )
+
+        menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _monitor_all_hops(self):
+        """Emit monitor_requested for every responding hop in the last traceroute."""
+        for hop in self._hops:
+            if hop.ip and hop.ip != "*" and not hop.timed_out:
+                self.monitor_requested.emit(hop.ip)
+
     def _run(self):
         target = self._host_combo.currentText().strip()
         if not target:
@@ -150,6 +204,7 @@ class TracerouteTab(QWidget):
         self._running = True
         self._run_btn.setEnabled(False)
         self._abort_btn.setEnabled(True)
+        self._monitor_path_btn.setEnabled(False)
         self._engine.run(target)
 
     def _abort(self):
@@ -209,6 +264,7 @@ class TracerouteTab(QWidget):
         self._run_btn.setEnabled(True)
         self._abort_btn.setEnabled(False)
         responding = [hop for hop in hops if not hop.timed_out]
+        self._monitor_path_btn.setEnabled(bool(responding))
         avg_total = (
             sum(hop.avg_rtt for hop in responding if hop.avg_rtt is not None) / len(responding)
             if responding
