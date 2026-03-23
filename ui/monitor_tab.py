@@ -8,9 +8,10 @@ from typing import List, Optional
 import pyqtgraph as pg
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -216,7 +217,7 @@ class MonitorTab(QWidget):
         self._table.setHorizontalHeaderLabels(cols)
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 28}
+        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 54}
         for col, width in fixed_widths.items():
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self._table.setColumnWidth(col, width)
@@ -383,8 +384,8 @@ class MonitorTab(QWidget):
             self._plot.removeItem(session.plot_curve)
 
         for row in range(self._table.rowCount()):
-            btn = self._table.cellWidget(row, 8)
-            if btn and getattr(btn, '_session_id', None) == session_id:
+            cell = self._table.cellWidget(row, 8)
+            if cell and getattr(cell, '_session_id', None) == session_id:
                 self._table.removeRow(row)
                 break
 
@@ -400,20 +401,24 @@ class MonitorTab(QWidget):
         """First click: stop engines, preserve data in table/graph.
            Second click (when already all stopped): clear everything."""
         any_running = any(s.running for s in self._sessions)
-        if any_running:
-            for s in self._sessions:
-                if s.running:
-                    s.engine.stop()
-                    s.running = False
-            self._stop_all_btn.setText("✕ Clear All")
-            self.any_running_changed.emit(False)
-            n = len(self._sessions)
-            self._status_lbl.setText(
-                f"{n} session{'s' if n != 1 else ''} stopped — data preserved.  "
-                f"Click 'Clear All' to remove."
-            )
-        else:
-            self._clear_all()
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            if any_running:
+                for s in self._sessions:
+                    if s.running:
+                        s.engine.stop()
+                        s.running = False
+                self._stop_all_btn.setText("✕ Clear All")
+                self.any_running_changed.emit(False)
+                n = len(self._sessions)
+                self._status_lbl.setText(
+                    f"{n} session{'s' if n != 1 else ''} stopped — data preserved.  "
+                    f"Click 'Clear All' to remove."
+                )
+            else:
+                self._clear_all()
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _clear_all(self):
         """Remove all sessions, rows, and graph curves completely."""
@@ -468,16 +473,51 @@ class MonitorTab(QWidget):
         for col in range(2, 8):
             self._table.setItem(row, col, self._mk_cell("…"))
 
-        btn = QPushButton("×")
-        btn.setFixedSize(22, 22)
-        btn.setStyleSheet(
+        cell = self._make_row_buttons(session)
+        self._table.setCellWidget(row, 8, cell)
+
+    def _make_row_buttons(self, session: _PingSession) -> QWidget:
+        """Two-button cell widget: ⏸/▶ pause toggle + × remove."""
+        from PySide6.QtWidgets import QHBoxLayout
+        container = QWidget()
+        container._session_id = session.id
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setSpacing(2)
+
+        pause_btn = QPushButton("⏸")
+        pause_btn.setFixedSize(22, 22)
+        pause_btn.setToolTip("Pause monitoring")
+        pause_btn.setStyleSheet(
+            "QPushButton { color: #8b949e; background: transparent; border: none; "
+            "font-size: 10pt; }"
+            "QPushButton:hover { color: #c9d1d9; }"
+        )
+        pause_btn.clicked.connect(lambda _c, sid=session.id: self._toggle_pause(sid))
+        container._pause_btn = pause_btn
+        layout.addWidget(pause_btn)
+
+        del_btn = QPushButton("×")
+        del_btn.setFixedSize(22, 22)
+        del_btn.setToolTip("Remove session")
+        del_btn.setStyleSheet(
             "QPushButton { color: #f85149; background: transparent; border: none; "
             "font-size: 14pt; font-weight: bold; }"
             "QPushButton:hover { color: #ff7b72; }"
         )
-        btn._session_id = session.id
-        btn.clicked.connect(lambda _checked, sid=session.id: self.stop_session(sid))
-        self._table.setCellWidget(row, 8, btn)
+        del_btn.clicked.connect(lambda _c, sid=session.id: self.stop_session(sid))
+        layout.addWidget(del_btn)
+
+        return container
+
+    def _toggle_pause(self, session_id: int):
+        session = next((s for s in self._sessions if s.id == session_id), None)
+        if not session or not session.running:
+            return
+        if session.engine.is_paused:
+            session.engine.resume()
+        else:
+            session.engine.pause()
 
     def _mk_cell(self, text: str,
                  align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
@@ -487,27 +527,44 @@ class MonitorTab(QWidget):
 
     def _refresh_table(self):
         for row in range(self._table.rowCount()):
-            btn = self._table.cellWidget(row, 8)
-            if not btn:
+            cell = self._table.cellWidget(row, 8)
+            if not cell:
                 continue
-            sid = getattr(btn, '_session_id', None)
+            sid = getattr(cell, '_session_id', None)
             if sid is None:
                 continue
             session = next((s for s in self._sessions if s.id == sid), None)
             if not session or not session.stats:
                 continue
 
-            # Stopped session — dim dot, freeze stats cells, skip live update
+            pause_btn = getattr(cell, '_pause_btn', None)
+            dot = self._table.cellWidget(row, 0)
+
+            # Stopped session (via Stop All) — dim dot, disable buttons, freeze stats
             if not session.running:
-                dot = self._table.cellWidget(row, 0)
                 if dot:
                     dot.setStyleSheet("color: #484f58; font-size: 12pt;")
+                if pause_btn:
+                    pause_btn.setEnabled(False)
                 continue
+
+            # Paused session — show session colour on dot, swap button to ▶
+            if session.engine.is_paused:
+                if dot:
+                    dot.setStyleSheet(f"color: {session.color}; font-size: 12pt;")
+                if pause_btn:
+                    pause_btn.setText("▶")
+                    pause_btn.setToolTip("Resume monitoring")
+                continue
+
+            # Running session — health-based dot colour, ⏸ button
+            if pause_btn:
+                pause_btn.setText("⏸")
+                pause_btn.setToolTip("Pause monitoring")
 
             stats = session.stats
             rtt = stats.last_rtt
 
-            dot = self._table.cellWidget(row, 0)
             if dot:
                 if rtt is None or stats.loss_pct > 10:
                     health = "#f85149"

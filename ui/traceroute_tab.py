@@ -198,6 +198,7 @@ class TracerouteTab(QWidget):
             return
         self._target = target
         self.add_to_history(target)
+        self._host_combo.setCurrentIndex(self._host_combo.findText(target))
 
         self._hops.clear()
         self._table.setRowCount(0)
