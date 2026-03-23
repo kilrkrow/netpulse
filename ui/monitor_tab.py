@@ -204,12 +204,12 @@ class MonitorTab(QWidget):
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        cols = ["", "Host / Label", "RTT", "Loss %", "Min", "Max", "Avg", "Samples", ""]
+        cols = ["", "Host / Label", "RTT", "Loss %", "Min", "Max", "Avg", "Jitter", "Samples", ""]
         self._table = QTableWidget(0, len(cols))
         self._table.setHorizontalHeaderLabels(cols)
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 68}
+        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 62, 8: 72, 9: 68}
         for col, width in fixed_widths.items():
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self._table.setColumnWidth(col, width)
@@ -372,7 +372,7 @@ class MonitorTab(QWidget):
             self._plot.removeItem(session.plot_curve)
 
         for row in range(self._table.rowCount()):
-            cell = self._table.cellWidget(row, 8)
+            cell = self._table.cellWidget(row, 9)
             if cell and getattr(cell, "_session_id", None) == session_id:
                 self._table.removeRow(row)
                 break
@@ -457,10 +457,10 @@ class MonitorTab(QWidget):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             ),
         )
-        for col in range(2, 8):
+        for col in range(2, 9):
             self._table.setItem(row, col, self._mk_cell("…"))
 
-        self._table.setCellWidget(row, 8, self._make_row_buttons(session))
+        self._table.setCellWidget(row, 9, self._make_row_buttons(session))
 
     def _make_row_buttons(self, session: _PingSession) -> QWidget:
         """Build a small but high-contrast pause/remove control cluster per row."""
@@ -536,7 +536,7 @@ class MonitorTab(QWidget):
 
     def _refresh_table(self):
         for row in range(self._table.rowCount()):
-            cell = self._table.cellWidget(row, 8)
+            cell = self._table.cellWidget(row, 9)
             if not cell:
                 continue
             sid = getattr(cell, "_session_id", None)
@@ -585,9 +585,10 @@ class MonitorTab(QWidget):
             min_str = f"{stats.rtt_min:.0f}" if stats.rtt_min is not None else "-"
             max_str = f"{stats.rtt_max:.0f}" if stats.rtt_max is not None else "-"
             avg_str = f"{stats.rtt_avg:.0f}" if stats.rtt_avg is not None else "-"
+            jitter_str = f"{stats.jitter:.0f}" if stats.jitter is not None else "-"
 
             for col, text in enumerate(
-                [rtt_str, loss_str, min_str, max_str, avg_str, str(stats.samples)],
+                [rtt_str, loss_str, min_str, max_str, avg_str, jitter_str, str(stats.samples)],
                 start=2,
             ):
                 item = self._table.item(row, col)
