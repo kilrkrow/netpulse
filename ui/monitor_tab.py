@@ -47,8 +47,15 @@ _id_gen = itertools.count(1)
 
 
 class _PingSession:
-    def __init__(self, host: str, label: str, color: str,
-                 interval_ms: int, timeout_ms: int, window: int):
+    def __init__(
+        self,
+        host: str,
+        label: str,
+        color: str,
+        interval_ms: int,
+        timeout_ms: int,
+        window: int,
+    ):
         self.id = next(_id_gen)
         self.host = host
         self.label = label
@@ -58,17 +65,14 @@ class _PingSession:
         self.results: deque = deque(maxlen=window)
         self.stats: Optional[PingStats] = None
         self.plot_curve: Optional[pg.PlotDataItem] = None
-        self.running: bool = True   # False once stopped (data preserved)
+        self.running: bool = True  # False once stopped; preserved for export/viewing.
 
 
 class MonitorTab(QWidget):
     """Multi-session ping monitor with toggleable table and overlay-graph views."""
 
-    # For MainWindow: tray icon / alert manager
-    worst_stats_updated = Signal(object)   # PingStats — worst across all active sessions
-    # For MainWindow: push host into tracert/dossier history
+    worst_stats_updated = Signal(object)  # PingStats — worst across all active sessions
     session_started = Signal(str)
-    # For MainWindow: enable/disable export button etc.
     any_running_changed = Signal(bool)
 
     VIEW_TABLE = 0
@@ -78,13 +82,12 @@ class MonitorTab(QWidget):
         super().__init__(parent)
         self._alert_mgr = alert_mgr
         self._sessions: List[_PingSession] = []
-        self._archived_sessions: list = []   # [(label, [PingResult, ...])] for closed sessions
+        self._archived_sessions: list = []  # [(label, [PingResult, ...])] for closed sessions
         self._color_idx = 0
         self._view_mode = self.VIEW_TABLE
         self._user_zoomed = False
-        self._t0: Optional[float] = None   # Unix epoch of first session; graph x origin
+        self._t0: Optional[float] = None
 
-        # Defaults — kept in sync with MainWindow toolbar spins
         self._interval_ms = 1000
         self._timeout_ms = 2000
         self._window = 300
@@ -92,14 +95,10 @@ class MonitorTab(QWidget):
         self._build_ui()
         self._connect_watcher()
 
-        # Refresh table cells at 2 Hz
         self._table_timer = QTimer(self)
         self._table_timer.timeout.connect(self._refresh_table)
         self._table_timer.start(500)
 
-    # ------------------------------------------------------------------
-    # Settings setters — called by MainWindow when toolbar spins change
-    # ------------------------------------------------------------------
     def set_interval(self, ms: int):
         self._interval_ms = ms
 
@@ -109,9 +108,6 @@ class MonitorTab(QWidget):
     def set_window(self, pts: int):
         self._window = pts
 
-    # ------------------------------------------------------------------
-    # Build UI
-    # ------------------------------------------------------------------
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 4)
@@ -132,7 +128,6 @@ class MonitorTab(QWidget):
         ctrl = QHBoxLayout()
         ctrl.setSpacing(6)
 
-        # ── Manual target ──────────────────────────────────────────────
         ctrl.addWidget(QLabel("Target:"))
         self._host_combo = QComboBox()
         self._host_combo.setEditable(True)
@@ -155,13 +150,11 @@ class MonitorTab(QWidget):
         self._stop_all_btn.clicked.connect(self.stop_all)
         ctrl.addWidget(self._stop_all_btn)
 
-        # ── Separator ──────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
         sep.setStyleSheet("color: #30363d;")
         ctrl.addWidget(sep)
 
-        # ── Process picker ─────────────────────────────────────────────
         ctrl.addWidget(QLabel("Process:"))
         self._proc_combo = QComboBox()
         self._proc_combo.setEditable(True)
@@ -189,7 +182,6 @@ class MonitorTab(QWidget):
 
         ctrl.addStretch()
 
-        # ── View toggle ────────────────────────────────────────────────
         self._table_btn = QPushButton("⊞")
         self._table_btn.setToolTip("Table view")
         self._table_btn.setCheckable(True)
@@ -217,7 +209,7 @@ class MonitorTab(QWidget):
         self._table.setHorizontalHeaderLabels(cols)
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 60}
+        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 68}
         for col, width in fixed_widths.items():
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self._table.setColumnWidth(col, width)
@@ -237,13 +229,13 @@ class MonitorTab(QWidget):
 
         self._plot = pg.PlotWidget(
             background="#0d1117",
-            axisItems={'bottom': pg.DateAxisItem(orientation='bottom')},
+            axisItems={"bottom": pg.DateAxisItem(orientation="bottom")},
         )
         self._plot.showGrid(x=True, y=True, alpha=0.15)
         self._plot.setLabel("left", "RTT (ms)")
         self._plot.setLabel("bottom", "")
         self._plot.setMouseEnabled(x=True, y=True)
-        for axis in ('left', 'bottom'):
+        for axis in ("left", "bottom"):
             self._plot.getAxis(axis).setPen(pg.mkPen("#8b949e"))
             self._plot.getAxis(axis).setTextPen(pg.mkPen("#8b949e"))
         self._plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
@@ -265,9 +257,6 @@ class MonitorTab(QWidget):
 
         return w
 
-    # ------------------------------------------------------------------
-    # Process watcher
-    # ------------------------------------------------------------------
     def _connect_watcher(self):
         self._watcher = ProcessWatcher(self)
         self._watcher.process_found.connect(self._on_process_found)
@@ -321,16 +310,13 @@ class MonitorTab(QWidget):
                 f"Auto-added {added} connection{'s' if added != 1 else ''} from process."
             )
 
-    # ------------------------------------------------------------------
-    # Session management
-    # ------------------------------------------------------------------
     def _next_color(self) -> str:
         color = SESSION_COLORS[self._color_idx % len(SESSION_COLORS)]
         self._color_idx += 1
         return color
 
     def add_session(self, host: str, label: Optional[str] = None) -> Optional[_PingSession]:
-        """Start monitoring host.  Returns the session, or None if already monitored."""
+        """Start monitoring host. Returns the session, or None if already monitored."""
         host = host.strip()
         if not host:
             return None
@@ -342,7 +328,9 @@ class MonitorTab(QWidget):
         label = label or host
         color = self._next_color()
         session = _PingSession(
-            host=host, label=label, color=color,
+            host=host,
+            label=label,
+            color=color,
             interval_ms=self._interval_ms,
             timeout_ms=self._timeout_ms,
             window=self._window,
@@ -385,7 +373,7 @@ class MonitorTab(QWidget):
 
         for row in range(self._table.rowCount()):
             cell = self._table.cellWidget(row, 8)
-            if cell and getattr(cell, '_session_id', None) == session_id:
+            if cell and getattr(cell, "_session_id", None) == session_id:
                 self._table.removeRow(row)
                 break
 
@@ -398,8 +386,7 @@ class MonitorTab(QWidget):
             self._status_lbl.setText(f"Monitoring {len(self._sessions)} session(s).")
 
     def stop_all(self):
-        """First click: stop engines, preserve data in table/graph.
-           Second click (when already all stopped): clear everything."""
+        """First click stops engines and preserves data; second click clears the view."""
         any_running = any(s.running for s in self._sessions)
         QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
         try:
@@ -453,9 +440,6 @@ class MonitorTab(QWidget):
     def any_paused(self) -> bool:
         return any(s.engine.is_paused for s in self._sessions)
 
-    # ------------------------------------------------------------------
-    # Table
-    # ------------------------------------------------------------------
     def _add_table_row(self, session: _PingSession):
         row = self._table.rowCount()
         self._table.insertRow(row)
@@ -466,49 +450,67 @@ class MonitorTab(QWidget):
         self._table.setCellWidget(row, 0, dot)
 
         self._table.setItem(
-            row, 1,
-            self._mk_cell(session.label,
-                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            row,
+            1,
+            self._mk_cell(
+                session.label,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            ),
         )
         for col in range(2, 8):
             self._table.setItem(row, col, self._mk_cell("…"))
 
-        cell = self._make_row_buttons(session)
-        self._table.setCellWidget(row, 8, cell)
+        self._table.setCellWidget(row, 8, self._make_row_buttons(session))
 
     def _make_row_buttons(self, session: _PingSession) -> QWidget:
-        """Two-button cell widget: pause/resume toggle + remove."""
+        """Build a small but high-contrast pause/remove control cluster per row."""
         container = QWidget()
         container._session_id = session.id
-        # WA_TranslucentBackground is required for cell widgets; stylesheet alone
-        # does not make a QWidget truly transparent inside QTableWidget.
         container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(2, 1, 2, 1)
-        layout.setSpacing(2)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(3)
 
-        _btn_ss = (
+        # Keep the buttons opaque and high-contrast so they do not disappear
+        # against alternating table paints or transparent cell-widget quirks.
+        button_style = (
             "QPushButton {{"
-            "  color: {fg}; background: #2d333b; border: 1px solid #444c56;"
-            "  border-radius: 3px; font-size: 10pt; font-weight: bold;"
+            " color: {fg}; background: {bg}; border: 1px solid {border};"
+            " border-radius: 3px; font-size: 11pt; font-weight: bold;"
             "}}"
-            "QPushButton:hover {{ background: #444c56; color: {hover}; }}"
-            "QPushButton:disabled {{ color: #484f58; background: #161b22;"
-            "  border-color: #21262d; }}"
+            "QPushButton:hover {{ background: {hover_bg}; color: {hover_fg}; }}"
+            "QPushButton:disabled {{ color: #6e7681; background: #161b22;"
+            " border-color: #30363d; }}"
         )
 
-        pause_btn = QPushButton("||")
-        pause_btn.setFixedSize(24, 22)
+        pause_btn = QPushButton("II")
+        pause_btn.setFixedSize(26, 24)
         pause_btn.setToolTip("Pause monitoring")
-        pause_btn.setStyleSheet(_btn_ss.format(fg="#e6edf3", hover="#ffffff"))
+        pause_btn.setStyleSheet(
+            button_style.format(
+                fg="#f0f6fc",
+                bg="#30363d",
+                border="#6e7681",
+                hover_bg="#484f58",
+                hover_fg="#ffffff",
+            )
+        )
         pause_btn.clicked.connect(lambda _c, sid=session.id: self._toggle_pause(sid))
         container._pause_btn = pause_btn
         layout.addWidget(pause_btn)
 
-        del_btn = QPushButton("x")
-        del_btn.setFixedSize(24, 22)
+        del_btn = QPushButton("X")
+        del_btn.setFixedSize(26, 24)
         del_btn.setToolTip("Remove session")
-        del_btn.setStyleSheet(_btn_ss.format(fg="#ff7b72", hover="#ffa198"))
+        del_btn.setStyleSheet(
+            button_style.format(
+                fg="#ffb4ad",
+                bg="#3b1f23",
+                border="#a34a53",
+                hover_bg="#5f2d33",
+                hover_fg="#ffd7d3",
+            )
+        )
         del_btn.clicked.connect(lambda _c, sid=session.id: self.stop_session(sid))
         layout.addWidget(del_btn)
 
@@ -523,8 +525,11 @@ class MonitorTab(QWidget):
         else:
             session.engine.pause()
 
-    def _mk_cell(self, text: str,
-                 align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
+    def _mk_cell(
+        self,
+        text: str,
+        align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter,
+    ) -> QTableWidgetItem:
         item = QTableWidgetItem(text)
         item.setTextAlignment(align)
         return item
@@ -534,17 +539,16 @@ class MonitorTab(QWidget):
             cell = self._table.cellWidget(row, 8)
             if not cell:
                 continue
-            sid = getattr(cell, '_session_id', None)
+            sid = getattr(cell, "_session_id", None)
             if sid is None:
                 continue
             session = next((s for s in self._sessions if s.id == sid), None)
             if not session or not session.stats:
                 continue
 
-            pause_btn = getattr(cell, '_pause_btn', None)
+            pause_btn = getattr(cell, "_pause_btn", None)
             dot = self._table.cellWidget(row, 0)
 
-            # Stopped session (via Stop All) — dim dot, disable buttons, freeze stats
             if not session.running:
                 if dot:
                     dot.setStyleSheet("color: #484f58; font-size: 12pt;")
@@ -552,7 +556,6 @@ class MonitorTab(QWidget):
                     pause_btn.setEnabled(False)
                 continue
 
-            # Paused session — show session colour on dot, swap button to ▶
             if session.engine.is_paused:
                 if dot:
                     dot.setStyleSheet(f"color: {session.color}; font-size: 12pt;")
@@ -561,9 +564,8 @@ class MonitorTab(QWidget):
                     pause_btn.setToolTip("Resume monitoring")
                 continue
 
-            # Running session — health-based dot colour, ⏸ button
             if pause_btn:
-                pause_btn.setText("||")
+                pause_btn.setText("II")
                 pause_btn.setToolTip("Pause monitoring")
 
             stats = session.stats
@@ -578,14 +580,15 @@ class MonitorTab(QWidget):
                     health = "#3fb950"
                 dot.setStyleSheet(f"color: {health}; font-size: 12pt;")
 
-            rtt_str  = f"{rtt:.0f} ms" if rtt is not None else "Timeout"
+            rtt_str = f"{rtt:.0f} ms" if rtt is not None else "Timeout"
             loss_str = f"{stats.loss_pct:.1f}%"
-            min_str  = f"{stats.rtt_min:.0f}" if stats.rtt_min is not None else "-"
-            max_str  = f"{stats.rtt_max:.0f}" if stats.rtt_max is not None else "-"
-            avg_str  = f"{stats.rtt_avg:.0f}" if stats.rtt_avg is not None else "-"
+            min_str = f"{stats.rtt_min:.0f}" if stats.rtt_min is not None else "-"
+            max_str = f"{stats.rtt_max:.0f}" if stats.rtt_max is not None else "-"
+            avg_str = f"{stats.rtt_avg:.0f}" if stats.rtt_avg is not None else "-"
 
             for col, text in enumerate(
-                [rtt_str, loss_str, min_str, max_str, avg_str, str(stats.samples)], start=2
+                [rtt_str, loss_str, min_str, max_str, avg_str, str(stats.samples)],
+                start=2,
             ):
                 item = self._table.item(row, col)
                 if item:
@@ -598,14 +601,11 @@ class MonitorTab(QWidget):
                         else:
                             item.setForeground(QColor("#c9d1d9"))
 
-    # ------------------------------------------------------------------
-    # Graph
-    # ------------------------------------------------------------------
     def _add_graph_curve(self, session: _PingSession):
         curve = pg.PlotDataItem(
             pen=pg.mkPen(color=session.color, width=2),
             name=session.label,
-            connect='finite',
+            connect="finite",
         )
         self._plot.addItem(curve)
         session.plot_curve = curve
@@ -616,7 +616,7 @@ class MonitorTab(QWidget):
         results = list(session.results)
         if not results:
             return
-        y = [r.rtt_ms if r.rtt_ms is not None else float('nan') for r in results]
+        y = [r.rtt_ms if r.rtt_ms is not None else float("nan") for r in results]
         x = [r.timestamp.timestamp() for r in results]
         session.plot_curve.setData(x=x, y=y)
         if not self._user_zoomed:
@@ -637,9 +637,6 @@ class MonitorTab(QWidget):
         self._zoom_btn.setText("● Live")
         self._zoom_btn.setStyleSheet("")
 
-    # ------------------------------------------------------------------
-    # View toggle
-    # ------------------------------------------------------------------
     def _set_view(self, mode: int):
         self._view_mode = mode
         self._stack.setCurrentIndex(mode)
@@ -649,9 +646,6 @@ class MonitorTab(QWidget):
             for s in self._sessions:
                 self._update_graph_curve(s)
 
-    # ------------------------------------------------------------------
-    # Engine signal handlers
-    # ------------------------------------------------------------------
     def _on_result(self, session_id: int, result: PingResult):
         session = next((s for s in self._sessions if s.id == session_id), None)
         if not session or not session.running:
@@ -675,9 +669,6 @@ class MonitorTab(QWidget):
         self.worst_stats_updated.emit(worst.stats)
         self._alert_mgr.check(worst.stats, host=worst.host)
 
-    # ------------------------------------------------------------------
-    # Manual start
-    # ------------------------------------------------------------------
     def _on_start_clicked(self):
         host = self._host_combo.currentText().strip()
         if host:
@@ -688,9 +679,6 @@ class MonitorTab(QWidget):
         if session.results:
             self._archived_sessions.append((session.label, list(session.results)))
 
-    # ------------------------------------------------------------------
-    # History combo (persisted by MainWindow via get_history/load_history)
-    # ------------------------------------------------------------------
     def _add_to_history(self, host: str):
         idx = self._host_combo.findText(host)
         if idx >= 0:
@@ -710,17 +698,13 @@ class MonitorTab(QWidget):
         if not self._host_combo.count():
             self._host_combo.addItem("google.com")
 
-    # ------------------------------------------------------------------
-    # Export support
-    # ------------------------------------------------------------------
     def get_all_results(self) -> list:
-        """Return list of (session_label, PingResult) tuples for CSV export.
-        Includes results from sessions that have already been closed."""
+        """Return list of (session_label, PingResult) tuples for CSV export."""
         rows = []
         for label, results in self._archived_sessions:
-            for r in results:
-                rows.append((label, r))
+            for result in results:
+                rows.append((label, result))
         for s in self._sessions:
-            for r in s.results:
-                rows.append((s.label, r))
+            for result in s.results:
+                rows.append((s.label, result))
         return rows

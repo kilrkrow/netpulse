@@ -17,8 +17,9 @@ def get_running_processes() -> List[ProcessInfo]:
     """Return a deduplicated, name-sorted list of running processes."""
     try:
         result = subprocess.run(
-            ['tasklist', '/FO', 'CSV', '/NH'],
-            capture_output=True, text=True,
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
             timeout=10,
         )
@@ -46,8 +47,9 @@ def get_pids_for_name(process_name: str) -> List[int]:
     """Return all PIDs currently running under the given image name."""
     try:
         result = subprocess.run(
-            ['tasklist', '/FO', 'CSV', '/NH', '/FI', f'IMAGENAME eq {process_name}'],
-            capture_output=True, text=True,
+            ["tasklist", "/FO", "CSV", "/NH", "/FI", f"IMAGENAME eq {process_name}"],
+            capture_output=True,
+            text=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
             timeout=10,
         )
@@ -68,14 +70,14 @@ def get_pids_for_name(process_name: str) -> List[int]:
 
 
 def get_process_connections(pids: List[int]) -> List[str]:
-    """Return unique, routable remote IPs for all ESTABLISHED TCP connections
-    belonging to any of the given PIDs."""
+    """Return unique, routable remote IPs for all ESTABLISHED TCP connections."""
     if not pids:
         return []
     try:
         result = subprocess.run(
-            ['netstat', '-ano'],
-            capture_output=True, text=True,
+            ["netstat", "-ano"],
+            capture_output=True,
+            text=True,
             creationflags=subprocess.CREATE_NO_WINDOW,
             timeout=10,
         )
@@ -83,20 +85,17 @@ def get_process_connections(pids: List[int]) -> List[str]:
         ips: set[str] = set()
         for line in result.stdout.splitlines():
             parts = line.split()
-            # Format: Proto  LocalAddr  RemoteAddr  State  PID
             if len(parts) < 5:
                 continue
-            if parts[0].upper() != 'TCP':
+            if parts[0].upper() != "TCP":
                 continue
-            if parts[3].upper() != 'ESTABLISHED':
+            if parts[3].upper() != "ESTABLISHED":
                 continue
             if parts[4] not in pid_set:
                 continue
             remote = parts[2]
-            # Strip port (last colon); handle [IPv6]:port
-            ip = remote.rsplit(':', 1)[0].strip('[]')
-            # Filter unroutable addresses
-            if ip in ('0.0.0.0', '::', '::1') or ip.startswith('127.'):
+            ip = remote.rsplit(":", 1)[0].strip("[]")
+            if ip in ("0.0.0.0", "::", "::1") or ip.startswith("127."):
                 continue
             ips.add(ip)
         return sorted(ips)
@@ -105,17 +104,10 @@ def get_process_connections(pids: List[int]) -> List[str]:
 
 
 class ProcessWatcher(QObject):
-    """Poll every 2 s for a named process and emit its TCP connections as they appear.
+    """Poll every 2 s for a named process and emit its TCP connections as they appear."""
 
-    Workflow:
-      1. Call watch(name) to start watching.
-      2. process_found emits once the process appears (or immediately if already running).
-      3. connections_found emits whenever new ESTABLISHED remote IPs are detected.
-      4. Call stop() to halt polling.
-    """
-
-    process_found = Signal(str, int)   # process_name, first_pid
-    connections_found = Signal(list)   # list[str] of newly detected remote IPs
+    process_found = Signal(str, int)  # process_name, first_pid
+    connections_found = Signal(list)  # list[str] of newly detected remote IPs
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,7 +118,7 @@ class ProcessWatcher(QObject):
         self._timer.timeout.connect(self._poll)
 
     def watch(self, process_name: str):
-        """Begin watching for process_name.  Safe to call while already watching."""
+        """Begin watching for process_name. Safe to call while already watching."""
         self._name = process_name
         self._pids = []
         self._known = set()
@@ -144,14 +136,13 @@ class ProcessWatcher(QObject):
         if not self._name:
             return
 
-        # Step 1: refresh matching PIDs every poll so restarts/new instances are picked up
+        # Refresh matching PIDs every poll so restarts and new instances are picked up.
         previous_pids = set(self._pids)
         pids = get_pids_for_name(self._name)
         self._pids = pids
         if pids and not previous_pids:
             self.process_found.emit(self._name, pids[0])
 
-        # Step 2: scan connections for all known PIDs
         if self._pids:
             ips = get_process_connections(self._pids)
             new_ips = [ip for ip in ips if ip not in self._known]

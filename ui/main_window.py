@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         self._status_bar.setStyleSheet("QStatusBar { border-top: 1px solid #30363d; }")
         self.setStatusBar(self._status_bar)
 
-        self._sb_label = QLabel("Ready — add a target on the Monitor tab to start")
+        self._sb_label = QLabel("Ready - add a target on the Monitor tab to start")
         self._sb_label.setStyleSheet("color: #8b949e; padding: 2px 6px;")
         self._status_bar.addWidget(self._sb_label)
 
@@ -173,7 +173,7 @@ class MainWindow(QMainWindow):
         show_action.triggered.connect(self._toggle_window)
 
         menu.addSeparator()
-        about_action = menu.addAction("About NetPulse…")
+        about_action = menu.addAction("About NetPulse...")
         about_action.triggered.connect(self._show_about)
 
         menu.addSeparator()
@@ -191,12 +191,12 @@ class MainWindow(QMainWindow):
     # Signal wiring
     # ------------------------------------------------------------------
     def _connect_signals(self):
-        # Toolbar spins → MonitorTab defaults
+        # Toolbar spins -> MonitorTab defaults
         self._interval_spin.valueChanged.connect(self._monitor_tab.set_interval)
         self._timeout_spin.valueChanged.connect(self._monitor_tab.set_timeout)
         self._window_spin.valueChanged.connect(self._monitor_tab.set_window)
 
-        # MonitorTab → MainWindow
+        # MonitorTab -> MainWindow
         self._monitor_tab.worst_stats_updated.connect(self._on_stats)
         self._monitor_tab.session_started.connect(self._on_session_started)
         self._monitor_tab.any_running_changed.connect(self._on_any_running_changed)
@@ -219,29 +219,29 @@ class MainWindow(QMainWindow):
     # History persistence
     # ------------------------------------------------------------------
     def _history_file(self) -> str:
-        base = os.environ.get('APPDATA') or os.path.expanduser('~')
-        folder = os.path.join(base, 'NetPulse')
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        folder = os.path.join(base, "NetPulse")
         os.makedirs(folder, exist_ok=True)
-        return os.path.join(folder, 'history.json')
+        return os.path.join(folder, "history.json")
 
     def _load_history(self):
         try:
-            with open(self._history_file(), encoding='utf-8') as f:
+            with open(self._history_file(), encoding="utf-8") as f:
                 data = json.load(f)
-            self._monitor_tab.load_history(data.get('ping', ['google.com']))
-            self._tracer_tab.load_history(data.get('tracert', []))
-            self._dossier_tab.load_history(data.get('dossier', []))
+            self._monitor_tab.load_history(data.get("ping", ["google.com"]))
+            self._tracer_tab.load_history(data.get("tracert", []))
+            self._dossier_tab.load_history(data.get("dossier", []))
         except Exception:
             pass
 
     def _save_history(self):
         try:
             data = {
-                'ping':    self._monitor_tab.get_history(),
-                'tracert': self._tracer_tab.get_history(),
-                'dossier': self._dossier_tab.get_history(),
+                "ping": self._monitor_tab.get_history(),
+                "tracert": self._tracer_tab.get_history(),
+                "dossier": self._dossier_tab.get_history(),
             }
-            with open(self._history_file(), 'w', encoding='utf-8') as f:
+            with open(self._history_file(), "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception:
             pass
@@ -264,7 +264,7 @@ class MainWindow(QMainWindow):
             self._tray.setIcon(_make_tray_icon("#8b949e"))
             self._tray.setToolTip("NetPulse - Stopped")
             self._tray_status_action.setText("Stopped")
-            self._sb_label.setText("  Ready — add a target on the Monitor tab to start")
+            self._sb_label.setText("  Ready - add a target on the Monitor tab to start")
             self._sb_right.setText("")
 
     @Slot(object)
@@ -280,7 +280,7 @@ class MainWindow(QMainWindow):
         if self._monitor_tab.any_paused is False and self._current_stats:
             self._monitor_tab.pause_all()
             self._sb_label.setText(
-                f"  ⏸ Ping paused — traceroute in progress  ({self._current_stats.host})"
+                f"  Ping paused - traceroute in progress ({self._current_stats.host})"
             )
 
     @Slot(list)
@@ -353,14 +353,15 @@ class MainWindow(QMainWindow):
         if self._last_alert_host:
             tracer_idx = self._tabs.indexOf(self._tracer_tab)
             self._tabs.setCurrentIndex(tracer_idx)
-            self._tracer_tab.set_target(self._last_alert_host)
+            # Alert clicks should land on the alerted host and immediately trace it.
+            self._tracer_tab.set_target(self._last_alert_host, autorun=True)
 
     # ------------------------------------------------------------------
     # Status bar
     # ------------------------------------------------------------------
     def _update_status_bar(self):
         if self._monitor_tab.any_paused:
-            return  # keep the "paused" message visible
+            return
         if not self._current_stats:
             return
         stats = self._current_stats
@@ -392,18 +393,22 @@ class MainWindow(QMainWindow):
 
         with open(path, "w", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["Session", "Timestamp", "Host", "Seq", "RTT_ms", "TTL", "IP", "Error"])
+            writer.writerow(
+                ["Session", "Timestamp", "Host", "Seq", "RTT_ms", "TTL", "IP", "Error"]
+            )
             for label, result in all_results:
-                writer.writerow([
-                    label,
-                    result.timestamp.isoformat(),
-                    result.host,
-                    result.seq,
-                    result.rtt_ms if result.rtt_ms is not None else "",
-                    result.ttl or "",
-                    result.resolved_ip or "",
-                    result.error or "",
-                ])
+                writer.writerow(
+                    [
+                        label,
+                        result.timestamp.isoformat(),
+                        result.host,
+                        result.seq,
+                        result.rtt_ms if result.rtt_ms is not None else "",
+                        result.ttl or "",
+                        result.resolved_ip or "",
+                        result.error or "",
+                    ]
+                )
         QMessageBox.information(self, "Export", f"Saved to:\n{path}")
 
     # ------------------------------------------------------------------
@@ -428,7 +433,7 @@ class MainWindow(QMainWindow):
             "<p>Real-time network diagnostic tool.<br>"
             "Ping monitoring, traceroute, DNS/GeoIP/WHOIS dossier, and configurable alerts.</p>"
             "<p style='color:#8b949e; font-size:9pt;'>"
-            "© 2025 Guy Schamp (kilrkrow)<br>"
+            "(c) 2025 Guy Schamp (kilrkrow)<br>"
             "Released under the MIT License."
             "</p>",
         )

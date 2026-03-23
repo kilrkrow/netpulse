@@ -151,8 +151,18 @@ class TracerouteTab(QWidget):
             if self._host_combo.findText(host) < 0:
                 self._host_combo.addItem(host)
 
-    def set_target(self, host: str):
+    def set_target(self, host: str, autorun: bool = False):
+        """Point the target picker at host, optionally kicking off a trace immediately."""
         self.add_to_history(host)
+        idx = self._host_combo.findText(host)
+        if idx >= 0:
+            self._host_combo.setCurrentIndex(idx)
+        else:
+            self._host_combo.lineEdit().setText(host)
+
+        # Tray-alert clicks should land on the intended host, not just stash it in history.
+        if autorun and not self._running:
+            self._run()
 
     def _show_hop_menu(self, pos):
         """Right-click context menu on a traceroute table row."""
