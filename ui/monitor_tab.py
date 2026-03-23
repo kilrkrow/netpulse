@@ -477,35 +477,38 @@ class MonitorTab(QWidget):
         self._table.setCellWidget(row, 8, cell)
 
     def _make_row_buttons(self, session: _PingSession) -> QWidget:
-        """Two-button cell widget: ⏸/▶ pause toggle + × remove."""
-        from PySide6.QtWidgets import QHBoxLayout
+        """Two-button cell widget: pause/resume toggle + remove."""
         container = QWidget()
         container._session_id = session.id
-        container.setStyleSheet("background: transparent;")
+        # WA_TranslucentBackground is required for cell widgets; stylesheet alone
+        # does not make a QWidget truly transparent inside QTableWidget.
+        container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setContentsMargins(2, 1, 2, 1)
         layout.setSpacing(2)
 
-        pause_btn = QPushButton("⏸")
+        _btn_ss = (
+            "QPushButton {{"
+            "  color: {fg}; background: #21262d; border: 1px solid #30363d;"
+            "  border-radius: 3px; font-size: 9pt; font-weight: bold;"
+            "}}"
+            "QPushButton:hover {{ background: #30363d; color: {hover}; }}"
+            "QPushButton:disabled {{ color: #484f58; background: #161b22;"
+            "  border-color: #21262d; }}"
+        )
+
+        pause_btn = QPushButton("||")
         pause_btn.setFixedSize(22, 22)
         pause_btn.setToolTip("Pause monitoring")
-        pause_btn.setStyleSheet(
-            "QPushButton { color: #8b949e; background: transparent; border: none; "
-            "font-size: 10pt; }"
-            "QPushButton:hover { color: #c9d1d9; }"
-        )
+        pause_btn.setStyleSheet(_btn_ss.format(fg="#8b949e", hover="#c9d1d9"))
         pause_btn.clicked.connect(lambda _c, sid=session.id: self._toggle_pause(sid))
         container._pause_btn = pause_btn
         layout.addWidget(pause_btn)
 
-        del_btn = QPushButton("×")
+        del_btn = QPushButton("x")
         del_btn.setFixedSize(22, 22)
         del_btn.setToolTip("Remove session")
-        del_btn.setStyleSheet(
-            "QPushButton { color: #f85149; background: transparent; border: none; "
-            "font-size: 14pt; font-weight: bold; }"
-            "QPushButton:hover { color: #ff7b72; }"
-        )
+        del_btn.setStyleSheet(_btn_ss.format(fg="#f85149", hover="#ff7b72"))
         del_btn.clicked.connect(lambda _c, sid=session.id: self.stop_session(sid))
         layout.addWidget(del_btn)
 
@@ -554,13 +557,13 @@ class MonitorTab(QWidget):
                 if dot:
                     dot.setStyleSheet(f"color: {session.color}; font-size: 12pt;")
                 if pause_btn:
-                    pause_btn.setText("▶")
+                    pause_btn.setText(">")
                     pause_btn.setToolTip("Resume monitoring")
                 continue
 
             # Running session — health-based dot colour, ⏸ button
             if pause_btn:
-                pause_btn.setText("⏸")
+                pause_btn.setText("||")
                 pause_btn.setToolTip("Pause monitoring")
 
             stats = session.stats
