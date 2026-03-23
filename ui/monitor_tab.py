@@ -217,7 +217,7 @@ class MonitorTab(QWidget):
         self._table.setHorizontalHeaderLabels(cols)
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 54}
+        fixed_widths = {0: 18, 2: 72, 3: 60, 4: 55, 5: 55, 6: 55, 7: 72, 8: 60}
         for col, width in fixed_widths.items():
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self._table.setColumnWidth(col, width)
@@ -489,26 +489,26 @@ class MonitorTab(QWidget):
 
         _btn_ss = (
             "QPushButton {{"
-            "  color: {fg}; background: #21262d; border: 1px solid #30363d;"
-            "  border-radius: 3px; font-size: 9pt; font-weight: bold;"
+            "  color: {fg}; background: #2d333b; border: 1px solid #444c56;"
+            "  border-radius: 3px; font-size: 10pt; font-weight: bold;"
             "}}"
-            "QPushButton:hover {{ background: #30363d; color: {hover}; }}"
+            "QPushButton:hover {{ background: #444c56; color: {hover}; }}"
             "QPushButton:disabled {{ color: #484f58; background: #161b22;"
             "  border-color: #21262d; }}"
         )
 
         pause_btn = QPushButton("||")
-        pause_btn.setFixedSize(22, 22)
+        pause_btn.setFixedSize(24, 22)
         pause_btn.setToolTip("Pause monitoring")
-        pause_btn.setStyleSheet(_btn_ss.format(fg="#8b949e", hover="#c9d1d9"))
+        pause_btn.setStyleSheet(_btn_ss.format(fg="#e6edf3", hover="#ffffff"))
         pause_btn.clicked.connect(lambda _c, sid=session.id: self._toggle_pause(sid))
         container._pause_btn = pause_btn
         layout.addWidget(pause_btn)
 
         del_btn = QPushButton("x")
-        del_btn.setFixedSize(22, 22)
+        del_btn.setFixedSize(24, 22)
         del_btn.setToolTip("Remove session")
-        del_btn.setStyleSheet(_btn_ss.format(fg="#f85149", hover="#ff7b72"))
+        del_btn.setStyleSheet(_btn_ss.format(fg="#ff7b72", hover="#ffa198"))
         del_btn.clicked.connect(lambda _c, sid=session.id: self.stop_session(sid))
         layout.addWidget(del_btn)
 
