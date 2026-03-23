@@ -481,6 +481,7 @@ class MonitorTab(QWidget):
         from PySide6.QtWidgets import QHBoxLayout
         container = QWidget()
         container._session_id = session.id
+        container.setStyleSheet("background: transparent;")
         layout = QHBoxLayout(container)
         layout.setContentsMargins(2, 0, 2, 0)
         layout.setSpacing(2)
