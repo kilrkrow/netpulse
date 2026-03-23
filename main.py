@@ -3,7 +3,7 @@
 Entry point: configures pyqtgraph, applies dark theme, launches MainWindow.
 """
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 import os
 import sys

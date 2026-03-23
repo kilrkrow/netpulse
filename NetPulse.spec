@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('core', 'core'), ('ui', 'ui')],
+    datas=[],  # pure Python packages -- Analysis bundles them; datas would re-add __pycache__ .pyc files that shadow our edits at runtime
     hiddenimports=['PySide6.QtSvg', 'PySide6.QtXml', 'pyqtgraph', 'dns.resolver', 'dns.reversename', 'whois', 'numpy'],
     hookspath=[],
     hooksconfig={},

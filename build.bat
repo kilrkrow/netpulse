@@ -71,6 +71,12 @@ set WORKPATH=%NETPULSE_WORKPATH%
 
 echo Build output: %DISTPATH% >> build.log
 
+REM Purge __pycache__ so PyInstaller never bundles stale .pyc bytecode
+echo Clearing __pycache__ dirs... >> build.log
+for /d /r . %%d in (__pycache__) do (
+    if exist "%%d" rmdir /s /q "%%d" >> build.log 2>&1
+)
+
 REM Kill any running NetPulse instance so its DLLs aren't locked during clean
 echo Stopping any running NetPulse.exe... >> build.log
 taskkill /f /im NetPulse.exe > nul 2>&1
