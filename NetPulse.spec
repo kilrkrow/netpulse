@@ -32,7 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,           # skip CopyIcons (Store Python sandbox workaround)
+    icon='assets/appicon.ico',
 )
 coll = COLLECT(
     exe,
