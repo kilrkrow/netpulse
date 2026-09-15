@@ -61,12 +61,8 @@ def build_hop_menu(parent: QWidget, hop: TracerouteHop, cb: VerbCallbacks, *, ta
     _add(menu, "Copy address", lambda: cb.copy_text(hop.ip or target), "Ctrl+C")
     if host:
         _add(menu, "Copy hostname", lambda: cb.copy_text(host))
-    if asn:
+    if asn and str(asn).upper() not in ("N/A", "ASN N/A", ""):
         _add(menu, "Copy ASN", lambda: cb.copy_text(str(asn)))
-    else:
-        act = QAction("Copy ASN (N/A)", menu)
-        act.setEnabled(False)
-        menu.addAction(act)
 
     menu.addSeparator()
     _add(menu, "Ping", lambda: cb.ping(target), "P")

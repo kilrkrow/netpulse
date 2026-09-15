@@ -110,6 +110,7 @@ class ProShell(QMainWindow):
         _ps = load_json("probe_source.json", {"iface": ""})
         self._probe_source: str = _ps.get("iface", "") if isinstance(_ps, dict) else ""
         self._last_error: Optional[str] = None
+        self._cancelled_flag = False
         self._snapshot_mode = False
         self._prev_hops: List[TracerouteHop] = []
 
@@ -257,6 +258,13 @@ class ProShell(QMainWindow):
         self._snap_btn.clicked.connect(lambda: self._set_mode(True))
         lay.addWidget(self._live_btn)
         lay.addWidget(self._snap_btn)
+
+        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn.setObjectName("ModeToggle")
+        self._cancel_btn.setEnabled(False)
+        self._cancel_btn.setToolTip("Cancel the running path probe")
+        self._cancel_btn.clicked.connect(self._cancel_run)
+        lay.addWidget(self._cancel_btn)
         return bar
 
     def _build_footer(self) -> QFrame:
@@ -303,10 +311,12 @@ class ProShell(QMainWindow):
         self._tray.show()
 
     def _connect_engine(self):
-        self._tracer.started.connect(lambda: self._run_btn.setEnabled(False))
+        self._tracer.started.connect(self._on_trace_started)
         self._tracer.hop_found.connect(self._on_hop)
         self._tracer.finished.connect(self._on_finished)
         self._tracer.error_occurred.connect(self._on_trace_error)
+        self._tracer.probing.connect(self._on_probing)
+        self._tracer.cancelled.connect(self._on_cancelled)
 
     # --- nav / mode ---
     def _nav(self, key: str):
@@ -338,11 +348,45 @@ class ProShell(QMainWindow):
         if not target:
             self._status.showMessage("Enter a hostname or IP first.")
             return
+        if self._tracer.is_running:
+            self._status.showMessage("Path already running - Cancel first.")
+            return
         self._remember_target(target)
         self._last_error = None
+        self._cancelled_flag = False
         self._nav("path")
-        self._cc.begin_run(target)
+        self._tracer.set_gateway(self._net.gateway)
+        self._cc.begin_run(target, gateway=self._net.gateway)
+        self._run_btn.setEnabled(False)
+        self._cancel_btn.setEnabled(True)
+        self._status.showMessage("Probing hop 1...")
         self._tracer.run(target)
+
+    @Slot()
+    def _cancel_run(self):
+        if not self._tracer.is_running:
+            return
+        self._cancelled_flag = True
+        self._tracer.abort()
+        self._status.showMessage("Cancelling...")
+
+    @Slot()
+    def _on_trace_started(self):
+        self._run_btn.setEnabled(False)
+        self._cancel_btn.setEnabled(True)
+
+    @Slot(int, float, str)
+    def _on_probing(self, hop_num: int, elapsed: float, hint: str):
+        self._cc.set_probing(hop_num, elapsed, hint)
+        msg = f"Probing hop {hop_num}... ({elapsed:.0f}s)"
+        if hint:
+            msg = f"{msg} - {hint}"
+        self._status.showMessage(msg)
+
+    @Slot()
+    def _on_cancelled(self):
+        self._cancelled_flag = True
+        self._status.showMessage("Path cancelled")
 
     def _remember_target(self, target: str):
         if target in self._recent:
@@ -355,24 +399,32 @@ class ProShell(QMainWindow):
 
     @Slot(object)
     def _on_hop(self, hop: TracerouteHop):
-        # cheap reverse DNS if hostname missing
+        # cheap reverse DNS if hostname missing (-d tracert skips PTR)
         if hop.ip and not hop.hostname:
             try:
                 hop.hostname = socket.gethostbyaddr(hop.ip)[0]
             except Exception:
                 pass
-        hop.asn = "N/A"  # stub
+        # do not stamp ASN N/A - omit until real data
+        if self._net.gateway and hop.ip:
+            from core.traceroute import classify_role
+            hop.role = classify_role(hop.ip, hop.hop_num, self._net.gateway)
         self._cc.add_hop(hop)
 
     @Slot(list)
     def _on_finished(self, hops: List[TracerouteHop]):
         self._run_btn.setEnabled(True)
-        if self._snapshot_mode or self._prev_hops is not None:
-            # keep previous for compare when starting a new run we already swapped
-            pass
-        self._cc.finish_run(hops, self._last_error)
+        self._cancel_btn.setEnabled(False)
+        cancelled = getattr(self, "_cancelled_flag", False)
+        self._cc.finish_run(hops, self._last_error, cancelled=cancelled)
         self._path_lab.set_hops(hops)
         self._prev_hops = list(hops)
+        if cancelled:
+            self._status.showMessage(f"Cancelled - {len(hops)} hop(s) kept")
+        elif self._last_error:
+            self._status.showMessage(self._last_error)
+        else:
+            self._status.showMessage(f"Path complete - {len(hops)} hop(s)")
 
     @Slot(str)
     def _on_trace_error(self, msg: str):
