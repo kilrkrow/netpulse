@@ -167,6 +167,7 @@ class MonitorTab(QWidget):
         self._proc_combo.setEditable(True)
         self._proc_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._proc_combo.lineEdit().setPlaceholderText("search running processes…")
+        self._proc_combo.lineEdit().returnPressed.connect(self._on_proc_return_pressed)
         self._proc_combo.setMinimumWidth(180)
         ctrl.addWidget(self._proc_combo)
 
@@ -285,6 +286,13 @@ class MonitorTab(QWidget):
             self._proc_combo.setCurrentIndex(idx)
         elif current:
             self._proc_combo.lineEdit().setText(current)
+
+    def _on_proc_return_pressed(self):
+        """Enter in process search triggers Watch (startBtn primary), never Stop."""
+        if self._watch_btn.isChecked():
+            return
+        self._watch_btn.setChecked(True)
+        self._toggle_watch(True)
 
     def _toggle_watch(self, checked: bool):
         if checked:
