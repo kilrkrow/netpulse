@@ -39,7 +39,8 @@ from core.local_net import (
     save_json,
     start_timed_capture,
 )
-from core.traceroute import TracerouteEngine, TracerouteHop
+from core.fast_path import FastPathEngine
+from core.traceroute import TracerouteHop
 from ui.command_center import CommandCenterView
 from ui.context_verbs import VerbCallbacks
 from ui.path_lab import PathLabView
@@ -103,7 +104,7 @@ class ProShell(QMainWindow):
         self.setStyleSheet(PRO_STYLE)
         self.setWindowIcon(make_pulse_icon())
 
-        self._tracer = TracerouteEngine()
+        self._tracer = FastPathEngine(timeout_ms=300, max_hops=30)
         self._net = LocalNetInfo()
         self._recent: List[str] = load_json("recent_targets.json", [])
         self._pins: List[str] = load_json("watch_pins.json", [])
@@ -359,7 +360,7 @@ class ProShell(QMainWindow):
         self._cc.begin_run(target, gateway=self._net.gateway)
         self._run_btn.setEnabled(False)
         self._cancel_btn.setEnabled(True)
-        self._status.showMessage("Probing hop 1...")
+        self._status.showMessage("Fast path: probing hop 1...")
         self._tracer.run(target)
 
     @Slot()
@@ -399,14 +400,8 @@ class ProShell(QMainWindow):
 
     @Slot(object)
     def _on_hop(self, hop: TracerouteHop):
-        # cheap reverse DNS if hostname missing (-d tracert skips PTR)
-        if hop.ip and not hop.hostname:
-            try:
-                hop.hostname = socket.gethostbyaddr(hop.ip)[0]
-            except Exception:
-                pass
-        # do not stamp ASN N/A - omit until real data
-        if self._net.gateway and hop.ip:
+        # FastPath emits IP-first, then re-emits when async PTR fills hostname.
+        if self._net.gateway and hop.ip and not hop.role:
             from core.traceroute import classify_role
             hop.role = classify_role(hop.ip, hop.hop_num, self._net.gateway)
         self._cc.add_hop(hop)

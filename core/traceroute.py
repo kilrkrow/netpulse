@@ -167,6 +167,16 @@ class TracerouteEngine(QObject):
                 proc.kill()
             except Exception:
                 pass
+            try:
+                import subprocess as _sp
+                _sp.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True,
+                    creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0),
+                    timeout=2,
+                )
+            except Exception:
+                pass
 
     def _elapsed(self) -> float:
         return time.monotonic() - self._t0 if self._t0 else 0.0
