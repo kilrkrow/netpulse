@@ -69,6 +69,7 @@ class TracerouteTab(QWidget):
         self._host_combo.setEditable(True)
         self._host_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._host_combo.lineEdit().setPlaceholderText("hostname or IP")
+        self._host_combo.lineEdit().returnPressed.connect(self._run)
         self._host_combo.setMinimumWidth(220)
         toolbar.addWidget(self._host_combo)
         toolbar.addStretch()

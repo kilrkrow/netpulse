@@ -82,8 +82,15 @@ class RuleDialog(QDialog):
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        ok_btn = btns.button(QDialogButtonBox.StandardButton.Ok)
+        ok_btn.setDefault(True)
+        ok_btn.setAutoDefault(True)
+        cancel_btn = btns.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel_btn.setAutoDefault(False)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
+        # Enter in rule name = Ok (dialog primary)
+        self._name_edit.returnPressed.connect(self.accept)
         lay.addWidget(btns)
 
     def _populate(self, rule: AlertRule):
