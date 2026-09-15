@@ -1,39 +1,27 @@
-# Context-verb matrix (NetPulse Pro MVP)
+# Context-verb matrix (NetPulse Pro)
 
-## UX surfaces (juice pass)
+## Command Center composition (mockup fidelity)
 
-| Surface | Notes |
-|---------|--------|
-| Path overview timeline | Full-width hop dots; click selects; right-click / Shift+right-click verbs on hop |
-| Hop detail panel | Selected hop; same context verbs; no ASN N/A spam |
-| Footer strip | Unchanged |
-| Empty canvas | Unchanged |
-| Fat horizontal card row | Removed as primary view (was forcing h-scroll on 15+ hops) |
+| Region | Role |
+|--------|------|
+| Status line | Narrative: probing / complete with timeout hop called out |
+| Compact overview | Secondary spine (PC..DST), coral timeouts at a glance |
+| Story cards (wrap) | Primary mockup-like hop cards with quality + sparkline |
+| Dense hop table | Lower ~60% - all hops scannable |
+| Hop intel panel | Selected hop detail + timeout explanation |
+
+Auto-select: worst hop (first timeout, else highest RTT) on completion.
 
 ## Verbs
 
 | Surface | Verb | Status |
 |---------|------|--------|
-| Hop (overview/detail) | Copy address | live |
-| Hop | Copy hostname | live |
-| Hop | Copy ASN | hidden until real ASN data |
-| Hop | Ping | live |
-| Hop | Trace | live |
-| Hop | MTR continuous | live-minimal (`ping -t` + Path lab) |
-| Hop | Open in Path lab | live |
-| Hop | Whois / reverse DNS | live (best-effort; tracert uses -d, PTR in UI) |
-| Hop | Pin as watch target | live |
-| Hop | Copy as Markdown row | live |
-| Hop Shift+ | Copy tracert/pathping/ping -t | live |
-| Path lab row | Same + Compare / Mark ICMP-filtered / Set as new target | live |
-| Footer | Copy IPv4/IPv6/gateway/DNS | live |
-| Footer | Renew DHCP / Flush DNS | live |
-| Footer | Show ARP / neighbors | live |
-| Footer | Start timed capture | live (Wireshark launch or explain) |
-| Footer | Set as default probe source | live |
-| Footer Shift+ | CLI copies | live |
-| Empty canvas | Paste target & Run / Recent / playbook placeholder | live / stub playbook |
-| Live progress | Probing hop N + elapsed + Cancel | live |
-| Role badges | This PC / LAN / CGNAT / gateway / public | live (from address) |
-| Snapshot toggle | stub | stub |
-| Rail placeholders | Coming soon | stub |
+| Story card / table / intel | Copy address/hostname | live |
+| Hop | Copy ASN | hidden until real ASN |
+| Hop | Ping / Trace / MTR / Path lab / Whois / Pin / Markdown | live |
+| Hop Shift+ | tracert / pathping / ping -t | live |
+| Path lab | table verbs + Compare / Mark filtered / Set target | live |
+| Footer | copy / DHCP / flush / ARP / capture / probe source | live |
+| Empty | Paste&Run / Recent / playbook placeholder | live / stub |
+| Progress | Probing hop N + elapsed + Cancel | live |
+| Role badges | This PC / LAN / CGNAT / gateway / public / destination | live |

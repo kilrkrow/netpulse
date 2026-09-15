@@ -60,9 +60,11 @@ class PathOverview(QWidget):
         self._probing_num = hop_num
         self.update()
 
-    def select_hop_num(self, hop_num: Optional[int]):
+    def select_hop_num(self, hop_num: Optional[int], *, emit: bool = True):
         self._selected = hop_num
         self.update()
+        if not emit:
+            return
         hop = next((h for h in self._hops if h.hop_num == hop_num), None)
         self.hop_selected.emit(hop)
 
