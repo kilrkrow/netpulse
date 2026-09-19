@@ -101,7 +101,7 @@ if errorlevel 1 (
     echo Build finished: %DATE% %TIME%  [FAILED] >> build.log
     echo.
     echo BUILD FAILED. See build.log for details.
-    pause
+    if not defined NETPULSE_NOPAUSE pause
     exit /b 1
 )
 
@@ -116,7 +116,10 @@ echo ============================================
 echo.
 echo Notes:
 echo   - %DISTPATH%\NetPulse\ is a self-contained folder (~120 MB)
-echo   - Zip it and share - no Python install needed on target PC
+echo   - Official release zip name: NetPulse-win-x64-vX.Y.Z.zip
+echo   - Use scripts\publish-release.ps1 to zip this folder and print SHA256
+echo   - No Python install needed on the target PC
 echo   - First launch may be slow (AV scan); subsequent launches are fast
 echo.
-pause
+if not defined NETPULSE_NOPAUSE pause
+exit /b 0

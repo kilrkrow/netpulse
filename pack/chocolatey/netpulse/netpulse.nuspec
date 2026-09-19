@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>netpulse</id>
+    <version>0.1.0</version>
+    <title>NetPulse</title>
+    <authors>kilrkrow</authors>
+    <projectUrl>https://github.com/kilrkrow/netpulse</projectUrl>
+    <projectSourceUrl>https://github.com/kilrkrow/netpulse</projectSourceUrl>
+    <docsUrl>https://github.com/kilrkrow/netpulse#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/kilrkrow/netpulse/issues</bugTrackerUrl>
+    <packageSourceUrl>https://github.com/kilrkrow/netpulse/tree/main/pack/chocolatey/netpulse</packageSourceUrl>
+    <licenseUrl>https://github.com/kilrkrow/netpulse/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <summary>Lightweight Windows network diagnostics: ping, traceroute, and domain dossier from the system tray</summary>
+    <description>
+NetPulse is a lightweight network diagnostic tool for Windows. Quick ping, traceroute, and domain dossier lookups from your system tray.
+
+This package downloads the official portable ZIP from GitHub Releases and installs:
+
+* **NetPulse.exe** — desktop GUI (Start Menu shortcut)
+* **netpulse** — PATH shim that launches the GUI
+
+## Usage
+
+Launch from the Start Menu shortcut **NetPulse**, or:
+
+```text
+netpulse
+```
+
+## Project
+
+https://github.com/kilrkrow/netpulse
+    </description>
+    <tags>network ping traceroute diagnostics windows tray</tags>
+    <releaseNotes>https://github.com/kilrkrow/netpulse/releases/tag/v0.1.0</releaseNotes>
+    <copyright>Copyright (c) 2026 Guy Schamp</copyright>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
