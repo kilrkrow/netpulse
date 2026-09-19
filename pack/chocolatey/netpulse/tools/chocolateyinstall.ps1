@@ -7,8 +7,9 @@ $baseUrl = "https://github.com/kilrkrow/netpulse/releases/download/v$version"
 $zipUrl = "$baseUrl/$zipName"
 $zipPath = Join-Path $toolsDir $zipName
 
-# SHA256 of the official v0.1.0 GitHub release asset (set after the zip is published)
-$checksum = 'REPLACE_ME'
+# SHA256 of the official v0.1.0 GitHub release asset
+# https://github.com/kilrkrow/netpulse/releases/download/v0.1.0/NetPulse-win-x64-v0.1.0.zip
+$checksum = '7E70150890FAD6670C23A06F7F91D6CD864F63020D4CA7EC0AEFD4E0895BCE88'
 
 Get-ChocolateyWebFile -PackageName $packageName -FileFullPath $zipPath -Url $zipUrl `
   -Checksum $checksum -ChecksumType 'sha256'

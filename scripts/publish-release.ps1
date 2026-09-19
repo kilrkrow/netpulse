@@ -8,8 +8,8 @@
   NetPulse (NetPulse.exe plus dependencies). This script zips that folder as
   NetPulse-win-x64-v<version>.zip and prints the SHA256 for Chocolatey.
 
-  Checksums in pack/chocolatey/netpulse/ are left as REPLACE_ME until you
-  publish the GitHub release and paste the printed hash.
+  After a new GitHub release, paste the printed hash into
+  pack/chocolatey/netpulse/tools/chocolateyinstall.ps1 and VERIFICATION.txt.
 
 .PARAMETER Version
   Release version without a leading v. Defaults to the repo VERSION file.
@@ -97,8 +97,8 @@ Write-Host " SHA256: $hash"
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. Create GitHub release tag v$Version and attach $zipName"
-Write-Host "  2. Replace REPLACE_ME in pack\chocolatey\netpulse\tools\chocolateyinstall.ps1 with:"
+Write-Host "  2. Set the SHA256 in pack\chocolatey\netpulse\tools\chocolateyinstall.ps1 to:"
 Write-Host "     $hash"
-Write-Host "  3. Replace REPLACE_ME in pack\chocolatey\netpulse\tools\VERIFICATION.txt"
+Write-Host "  3. Set the same SHA256 in pack\chocolatey\netpulse\tools\VERIFICATION.txt"
 Write-Host "  4. cd pack\chocolatey\netpulse ; choco pack"
 Write-Host ""

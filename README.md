@@ -51,8 +51,8 @@ prints SHA256 for the Chocolatey package.
 ### Portable ZIP
 
 Download `NetPulse-win-x64-v0.1.0.zip` from
-[Releases](https://github.com/kilrkrow/netpulse/releases/tag/v0.1.0)
-after that release is published. Extract and run `NetPulse\NetPulse.exe`.
+[Releases](https://github.com/kilrkrow/netpulse/releases/tag/v0.1.0).
+Extract and run `NetPulse\NetPulse.exe`.
 
 ### Chocolatey
 
@@ -73,9 +73,9 @@ First Chocolatey-ready GitHub Release:
 - Portable Windows x64 ZIP (`NetPulse-win-x64-v0.1.0.zip`) from `build.bat` / `NetPulse.spec`
 - Chocolatey package `netpulse` (`pack/chocolatey/netpulse/`)
 - `scripts/publish-release.ps1` wraps build + zip + SHA256
-
-Checksums in the Chocolatey install script stay `REPLACE_ME` until the
-`v0.1.0` asset is uploaded.
+- Chocolatey downloads
+  `https://github.com/kilrkrow/netpulse/releases/download/v0.1.0/NetPulse-win-x64-v0.1.0.zip`
+  (SHA256 `7E70150890FAD6670C23A06F7F91D6CD864F63020D4CA7EC0AEFD4E0895BCE88`)
 
 ## Usage
 

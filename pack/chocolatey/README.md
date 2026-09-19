@@ -12,9 +12,8 @@ choco pack
 
 Produces `netpulse.0.1.0.nupkg`.
 
-`choco pack` will succeed with the `REPLACE_ME` checksum placeholder. A real
-install against GitHub Releases will not, until the SHA256 is filled in after
-`v0.1.0` is published.
+v0.1.0 checksums are already set to the published GitHub Release asset
+`NetPulse-win-x64-v0.1.0.zip`.
 
 ## Install from local nupkg
 
@@ -39,7 +38,6 @@ package moderation for first publish.
 2. On Windows, run `.\scripts\publish-release.ps1` (wraps `build.bat` + zip + SHA256).
 3. Publish GitHub release `vX.Y.Z` with `NetPulse-win-x64-vX.Y.Z.zip`.
 4. Update `netpulse.nuspec` version and `releaseNotes`.
-5. Update `$version` and the SHA256 value in `tools/chocolateyinstall.ps1`
-   (replace `REPLACE_ME`).
+5. Update `$version` and the SHA256 value in `tools/chocolateyinstall.ps1`.
 6. Update `tools/VERIFICATION.txt`.
 7. `choco pack` and push.
