@@ -1,0 +1,23 @@
+VERIFICATION
+Verification is intended to assist the Chocolatey moderators and community
+in verifying that this package's contents are trustworthy.
+
+1. Download the official release asset from:
+   https://github.com/kilrkrow/netpulse/releases/tag/v0.1.0
+
+   - NetPulse-win-x64-v0.1.0.zip
+
+2. Obtain the SHA256 checksum, for example:
+
+   Get-FileHash .\NetPulse-win-x64-v0.1.0.zip -Algorithm SHA256
+
+   scripts\publish-release.ps1 also prints this hash after it zips the
+   PyInstaller folder produced by build.bat / NetPulse.spec.
+
+3. Compare to the value used in tools\chocolateyinstall.ps1:
+
+   SHA256: REPLACE_ME
+
+The package does not embed the binaries; it downloads them from GitHub Releases
+at install time. REPLACE_ME must be updated to the real SHA256 after v0.1.0
+is published.

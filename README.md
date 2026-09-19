@@ -2,6 +2,8 @@
 
 A lightweight network diagnostic tool for Windows. Quick ping, traceroute, and domain dossier lookups from your system tray.
 
+**Version:** [0.1.0](VERSION) (first public GitHub release)
+
 ## Features
 
 - **Ping** — ICMP ping with response times and packet loss tracking
@@ -19,13 +21,61 @@ A lightweight network diagnostic tool for Windows. Quick ping, traceroute, and d
 
 ### Run
 ```bash
-python netpulse.py
+setup.bat
+run.bat
 ```
 
-### Build Standalone
-```bash
-pyinstaller netpulse.spec
+Or: `python main.py`
+
+### Build standalone (Windows)
+
+`build.bat` / `NetPulse.spec` produce a self-contained folder
+(`dist\NetPulse\` when using `scripts\publish-release.ps1`, otherwise
+`%TEMP%\NetPulse-dist\NetPulse\` by default).
+
+```bat
+build.bat
 ```
+
+Zip that folder as `NetPulse-win-x64-v0.1.0.zip` (or run the wrapper below).
+
+```powershell
+.\scripts\publish-release.ps1
+```
+
+The script runs `build.bat`, writes `dist\NetPulse-win-x64-v0.1.0.zip`, and
+prints SHA256 for the Chocolatey package.
+
+## Install
+
+### Portable ZIP
+
+Download `NetPulse-win-x64-v0.1.0.zip` from
+[Releases](https://github.com/kilrkrow/netpulse/releases/tag/v0.1.0)
+after that release is published. Extract and run `NetPulse\NetPulse.exe`.
+
+### Chocolatey
+
+```powershell
+choco install netpulse
+```
+
+Package sources live under `pack/chocolatey/`. See
+[`pack/chocolatey/README.md`](pack/chocolatey/README.md) for pack, push, and
+version-bump steps.
+
+## Release notes
+
+### 0.1.0
+
+First Chocolatey-ready GitHub Release:
+
+- Portable Windows x64 ZIP (`NetPulse-win-x64-v0.1.0.zip`) from `build.bat` / `NetPulse.spec`
+- Chocolatey package `netpulse` (`pack/chocolatey/netpulse/`)
+- `scripts/publish-release.ps1` wraps build + zip + SHA256
+
+Checksums in the Chocolatey install script stay `REPLACE_ME` until the
+`v0.1.0` asset is uploaded.
 
 ## Usage
 
@@ -36,10 +86,10 @@ pyinstaller netpulse.spec
 
 ## Technical Details
 
-- Built with Python + tkinter
-- Uses system `ping` and `traceroute` commands
-- Lightweight, cross-platform compatible
-- Single-file executable available
+- Built with Python + PySide6
+- Uses system `ping` and `tracert` commands
+- Lightweight Windows desktop + tray app
+- Portable folder executable (PyInstaller COLLECT)
 
 ## License
 
