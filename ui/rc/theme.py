@@ -108,7 +108,7 @@ QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-butto
 QDoubleSpinBox::down-button:hover {{ background: #0f3a44; }}
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url(@ASSETS@/arrow_up.png); width: 9px; height: 5px; }}
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url(@ASSETS@/arrow_down.png); width: 9px; height: 5px; }}
-QLabel {{ background: transparent; }}
+QLabel, QCheckBox {{ background: transparent; }}
 QComboBox QAbstractItemView {{
     background: {PANEL}; border: 1px solid {BORDER}; selection-background-color: #0f4a57; outline: 0;
 }}
