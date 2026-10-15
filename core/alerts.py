@@ -67,7 +67,7 @@ class AlertManager(QObject):
         self._notify_callback: Optional[Callable[[str, str], None]] = None
 
     def set_notify_callback(self, cb: Callable[[str, str], None]):
-        """cb(title, message) — e.g., show a system tray balloon."""
+        """cb(title, message) - e.g., show a system tray balloon."""
         self._notify_callback = cb
 
     def check(self, stats, host: str = "") -> List[AlertEvent]:

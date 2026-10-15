@@ -14,15 +14,15 @@ from PySide6.QtGui import QColor, QFont
 
 from core.alerts import AlertManager, AlertRule, AlertEvent, METRICS, OPERATORS
 
-C_BG     = '#0d1117'
-C_SURF   = '#161b22'
-C_BORDER = '#30363d'
-C_TEXT   = '#c9d1d9'
-C_MUTED  = '#8b949e'
-C_BLUE   = '#58a6ff'
-C_GREEN  = '#3fb950'
-C_YELLOW = '#d29922'
-C_RED    = '#f85149'
+C_BG     = '#06080b'
+C_SURF   = '#0a0e12'
+C_BORDER = '#1c2a34'
+C_TEXT   = '#d5ecf2'
+C_MUTED  = '#8aa2ad'
+C_BLUE   = '#19e6ff'
+C_GREEN  = '#4be07c'
+C_YELLOW = '#ffb43f'
+C_RED    = '#ff4d5a'
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ class AlertsTab(QWidget):
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        # ── Rules panel ──────────────────────────────────────────────
+        # -- Rules panel ----------------------------------------------
         rules_widget = QWidget()
         rl = QVBoxLayout(rules_widget)
         rl.setContentsMargins(0, 0, 0, 0)
@@ -142,17 +142,17 @@ class AlertsTab(QWidget):
         rules_hdr.addWidget(title)
         rules_hdr.addStretch()
 
-        add_btn = QPushButton('＋ Add Rule')
+        add_btn = QPushButton('Add Rule')
         add_btn.setFixedWidth(100)
         add_btn.clicked.connect(self._add_rule)
         rules_hdr.addWidget(add_btn)
 
-        edit_btn = QPushButton('✎ Edit')
+        edit_btn = QPushButton('Edit')
         edit_btn.setFixedWidth(80)
         edit_btn.clicked.connect(self._edit_rule)
         rules_hdr.addWidget(edit_btn)
 
-        del_btn = QPushButton('✕ Remove')
+        del_btn = QPushButton('Remove')
         del_btn.setFixedWidth(90)
         del_btn.setObjectName('stopBtn')
         del_btn.clicked.connect(self._delete_rule)
@@ -180,7 +180,7 @@ class AlertsTab(QWidget):
 
         splitter.addWidget(rules_widget)
 
-        # ── Alert log ────────────────────────────────────────────────
+        # -- Alert log ------------------------------------------------
         log_widget = QWidget()
         ll = QVBoxLayout(log_widget)
         ll.setContentsMargins(0, 0, 0, 0)
@@ -227,7 +227,7 @@ class AlertsTab(QWidget):
             condition = f'{metric_label} {rule.operator}'
             threshold_str = f'{rule.threshold:.1f} {unit}'
             cooldown_str = f'{rule.cooldown_sec}s'
-            enabled_str = '✓' if rule.enabled else '✗'
+            enabled_str = 'ON' if rule.enabled else 'off'
 
             items = [rule.name, condition, threshold_str, cooldown_str, enabled_str]
             for col, text in enumerate(items):

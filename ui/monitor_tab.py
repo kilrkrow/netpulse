@@ -31,16 +31,16 @@ from core.process_monitor import ProcessWatcher, get_running_processes
 
 pg.setConfigOptions(antialias=True)
 
-# Colour palette for dark theme — cycles as more sessions are added
+# Colour palette for dark theme - cycles as more sessions are added
 SESSION_COLORS = [
-    "#58a6ff",  # blue
-    "#3fb950",  # green
-    "#d29922",  # amber
-    "#d2a8ff",  # purple
-    "#ff7b72",  # salmon
-    "#ffa657",  # orange
-    "#79c0ff",  # sky
-    "#56d364",  # lime
+    "#19e6ff",  # cyan
+    "#4be07c",  # green
+    "#ffb43f",  # amber
+    "#c08cff",  # purple
+    "#ff6f91",  # rose
+    "#ff8f3f",  # orange
+    "#5aa9ff",  # blue
+    "#c6e65a",  # lime
 ]
 
 _id_gen = itertools.count(1)
@@ -65,7 +65,7 @@ class MonitorTab(QWidget):
     """Multi-session ping monitor with toggleable table and overlay-graph views."""
 
     # For MainWindow: tray icon / alert manager
-    worst_stats_updated = Signal(object)   # PingStats — worst across all active sessions
+    worst_stats_updated = Signal(object)   # PingStats - worst across all active sessions
     # For MainWindow: push host into tracert/dossier history
     session_started = Signal(str)
     # For MainWindow: enable/disable export button etc.
@@ -84,7 +84,7 @@ class MonitorTab(QWidget):
         self._user_zoomed = False
         self._t0: Optional[float] = None   # Unix epoch of first session; graph x origin
 
-        # Defaults — kept in sync with MainWindow toolbar spins
+        # Defaults - kept in sync with MainWindow toolbar spins
         self._interval_ms = 1000
         self._timeout_ms = 2000
         self._window = 300
@@ -98,7 +98,7 @@ class MonitorTab(QWidget):
         self._table_timer.start(500)
 
     # ------------------------------------------------------------------
-    # Settings setters — called by MainWindow when toolbar spins change
+    # Settings setters - called by MainWindow when toolbar spins change
     # ------------------------------------------------------------------
     def set_interval(self, ms: int):
         self._interval_ms = ms
@@ -120,7 +120,7 @@ class MonitorTab(QWidget):
         root.addLayout(self._build_controls())
 
         self._status_lbl = QLabel("Add a target above to start monitoring.")
-        self._status_lbl.setStyleSheet("color: #8b949e; font-size: 9pt;")
+        self._status_lbl.setStyleSheet("color: #8aa2ad; font-size: 9pt;")
         root.addWidget(self._status_lbl)
 
         self._stack = QStackedWidget()
@@ -132,7 +132,7 @@ class MonitorTab(QWidget):
         ctrl = QHBoxLayout()
         ctrl.setSpacing(6)
 
-        # ── Manual target ──────────────────────────────────────────────
+        # -- Manual target ----------------------------------------------
         ctrl.addWidget(QLabel("Target:"))
         self._host_combo = QComboBox()
         self._host_combo.setEditable(True)
@@ -142,36 +142,36 @@ class MonitorTab(QWidget):
         self._host_combo.lineEdit().returnPressed.connect(self._on_start_clicked)
         ctrl.addWidget(self._host_combo)
 
-        self._start_btn = QPushButton("▶ Start")
+        self._start_btn = QPushButton("Start")
         self._start_btn.setObjectName("startBtn")
         self._start_btn.setFixedWidth(80)
         self._start_btn.clicked.connect(self._on_start_clicked)
         ctrl.addWidget(self._start_btn)
 
-        self._stop_all_btn = QPushButton("■ Stop All")
+        self._stop_all_btn = QPushButton("Stop All")
         self._stop_all_btn.setObjectName("stopBtn")
         self._stop_all_btn.setFixedWidth(90)
         self._stop_all_btn.setEnabled(False)
         self._stop_all_btn.clicked.connect(self.stop_all)
         ctrl.addWidget(self._stop_all_btn)
 
-        # ── Separator ──────────────────────────────────────────────────
+        # -- Separator --------------------------------------------------
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet("color: #30363d;")
+        sep.setStyleSheet("color: #1c2a34;")
         ctrl.addWidget(sep)
 
-        # ── Process picker ─────────────────────────────────────────────
+        # -- Process picker ---------------------------------------------
         ctrl.addWidget(QLabel("Process:"))
         self._proc_combo = QComboBox()
         self._proc_combo.setEditable(True)
         self._proc_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._proc_combo.lineEdit().setPlaceholderText("search running processes…")
+        self._proc_combo.lineEdit().setPlaceholderText("search running processes...")
         self._proc_combo.setMinimumWidth(180)
         ctrl.addWidget(self._proc_combo)
 
-        self._proc_refresh_btn = QPushButton("↻")
-        self._proc_refresh_btn.setFixedWidth(26)
+        self._proc_refresh_btn = QPushButton("Reload")
+        self._proc_refresh_btn.setFixedWidth(56)
         self._proc_refresh_btn.setToolTip("Refresh process list")
         self._proc_refresh_btn.clicked.connect(self._refresh_processes)
         ctrl.addWidget(self._proc_refresh_btn)
@@ -189,19 +189,19 @@ class MonitorTab(QWidget):
 
         ctrl.addStretch()
 
-        # ── View toggle ────────────────────────────────────────────────
-        self._table_btn = QPushButton("⊞")
+        # -- View toggle ------------------------------------------------
+        self._table_btn = QPushButton("Table")
         self._table_btn.setToolTip("Table view")
         self._table_btn.setCheckable(True)
         self._table_btn.setChecked(True)
-        self._table_btn.setFixedWidth(32)
+        self._table_btn.setFixedWidth(52)
         self._table_btn.clicked.connect(lambda: self._set_view(self.VIEW_TABLE))
         ctrl.addWidget(self._table_btn)
 
-        self._graph_btn = QPushButton("〜")
+        self._graph_btn = QPushButton("Graph")
         self._graph_btn.setToolTip("Overlay graph view")
         self._graph_btn.setCheckable(True)
-        self._graph_btn.setFixedWidth(32)
+        self._graph_btn.setFixedWidth(52)
         self._graph_btn.clicked.connect(lambda: self._set_view(self.VIEW_GRAPH))
         ctrl.addWidget(self._graph_btn)
 
@@ -225,7 +225,7 @@ class MonitorTab(QWidget):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setAlternatingRowColors(False)
-        self._table.setStyleSheet("QTableWidget { gridline-color: #21262d; }")
+        self._table.setStyleSheet("QTableWidget { gridline-color: #14202a; }")
         layout.addWidget(self._table)
         return w
 
@@ -236,7 +236,7 @@ class MonitorTab(QWidget):
         layout.setSpacing(4)
 
         self._plot = pg.PlotWidget(
-            background="#0d1117",
+            background="#06080b",
             axisItems={'bottom': pg.DateAxisItem(orientation='bottom')},
         )
         self._plot.showGrid(x=True, y=True, alpha=0.15)
@@ -244,20 +244,20 @@ class MonitorTab(QWidget):
         self._plot.setLabel("bottom", "")
         self._plot.setMouseEnabled(x=True, y=True)
         for axis in ('left', 'bottom'):
-            self._plot.getAxis(axis).setPen(pg.mkPen("#8b949e"))
-            self._plot.getAxis(axis).setTextPen(pg.mkPen("#8b949e"))
+            self._plot.getAxis(axis).setPen(pg.mkPen("#8aa2ad"))
+            self._plot.getAxis(axis).setTextPen(pg.mkPen("#8aa2ad"))
         self._plot.getViewBox().sigRangeChangedManually.connect(self._on_user_zoom)
         self._legend = self._plot.addLegend(
             offset=(10, 10),
-            labelTextColor="#c9d1d9",
+            labelTextColor="#d5ecf2",
             brush=pg.mkBrush(color=(22, 27, 34, 210)),
-            pen=pg.mkPen(color="#30363d"),
+            pen=pg.mkPen(color="#1c2a34"),
         )
         layout.addWidget(self._plot)
 
         zoom_row = QHBoxLayout()
         zoom_row.addStretch()
-        self._zoom_btn = QPushButton("● Live")
+        self._zoom_btn = QPushButton("Live")
         self._zoom_btn.setFixedWidth(110)
         self._zoom_btn.clicked.connect(self._reset_zoom)
         zoom_row.addWidget(self._zoom_btn)
@@ -294,7 +294,7 @@ class MonitorTab(QWidget):
                 return
             self._watcher.watch(name)
             self._status_lbl.setText(
-                f"Watching for '{name}'…  (will auto-add connections when found)"
+                f"Watching for '{name}'...  (will auto-add connections when found)"
             )
             self._watch_btn.setText("Stop")
             self._watch_btn.setObjectName("stopBtn")
@@ -308,7 +308,7 @@ class MonitorTab(QWidget):
 
     @Slot(str, int)
     def _on_process_found(self, name: str, pid: int):
-        self._status_lbl.setText(f"Found '{name}' (PID {pid}) — scanning connections…")
+        self._status_lbl.setText(f"Found '{name}' (PID {pid}), scanning connections...")
 
     @Slot(list)
     def _on_connections_found(self, ips: list):
@@ -362,7 +362,7 @@ class MonitorTab(QWidget):
         self._add_to_history(host)
 
         self.session_started.emit(host)
-        self._stop_all_btn.setText("■ Stop All")
+        self._stop_all_btn.setText("Stop All")
         self._stop_all_btn.setEnabled(True)
         self.any_running_changed.emit(True)
         self._status_lbl.setText(f"Monitoring {len(self._sessions)} session(s).")
@@ -408,11 +408,11 @@ class MonitorTab(QWidget):
                     if s.running:
                         s.engine.stop()
                         s.running = False
-                self._stop_all_btn.setText("✕ Clear All")
+                self._stop_all_btn.setText("Clear All")
                 self.any_running_changed.emit(False)
                 n = len(self._sessions)
                 self._status_lbl.setText(
-                    f"{n} session{'s' if n != 1 else ''} stopped — data preserved.  "
+                    f"{n} session{'s' if n != 1 else ''} stopped . Data preserved.  "
                     f"Click 'Clear All' to remove."
                 )
             else:
@@ -436,7 +436,7 @@ class MonitorTab(QWidget):
         except Exception:
             pass
         self._t0 = None
-        self._stop_all_btn.setText("■ Stop All")
+        self._stop_all_btn.setText("Stop All")
         self._stop_all_btn.setEnabled(False)
         self.any_running_changed.emit(False)
         self._status_lbl.setText("All sessions cleared.")
@@ -460,9 +460,9 @@ class MonitorTab(QWidget):
         row = self._table.rowCount()
         self._table.insertRow(row)
 
-        dot = QLabel("●")
+        dot = QLabel(" ")
         dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dot.setStyleSheet(f"color: {session.color}; font-size: 12pt;")
+        dot.setStyleSheet(f"background-color: {session.color}; margin: 7px 12px;")
         self._table.setCellWidget(row, 0, dot)
 
         self._table.setItem(
@@ -471,7 +471,7 @@ class MonitorTab(QWidget):
                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         )
         for col in range(2, 8):
-            self._table.setItem(row, col, self._mk_cell("…"))
+            self._table.setItem(row, col, self._mk_cell("..."))
 
         cell = self._make_row_buttons(session)
         self._table.setCellWidget(row, 8, cell)
@@ -489,18 +489,18 @@ class MonitorTab(QWidget):
 
         _btn_ss = (
             "QPushButton {{"
-            "  color: {fg}; background: #2d333b; border: 1px solid #444c56;"
-            "  border-radius: 3px; font-size: 10pt; font-weight: bold;"
+            "  color: {fg}; background: #0e141a; border: 1px solid #2c4150;"
+            "  border-radius: 0; font-size: 10pt; font-weight: bold;"
             "}}"
-            "QPushButton:hover {{ background: #444c56; color: {hover}; }}"
-            "QPushButton:disabled {{ color: #484f58; background: #161b22;"
-            "  border-color: #21262d; }}"
+            "QPushButton:hover {{ background: #2c4150; color: {hover}; }}"
+            "QPushButton:disabled {{ color: #52666f; background: #0a0e12;"
+            "  border-color: #14202a; }}"
         )
 
         pause_btn = QPushButton("||")
         pause_btn.setFixedSize(24, 22)
         pause_btn.setToolTip("Pause monitoring")
-        pause_btn.setStyleSheet(_btn_ss.format(fg="#e6edf3", hover="#ffffff"))
+        pause_btn.setStyleSheet(_btn_ss.format(fg="#d5ecf2", hover="#ffffff"))
         pause_btn.clicked.connect(lambda _c, sid=session.id: self._toggle_pause(sid))
         container._pause_btn = pause_btn
         layout.addWidget(pause_btn)
@@ -508,7 +508,7 @@ class MonitorTab(QWidget):
         del_btn = QPushButton("x")
         del_btn.setFixedSize(24, 22)
         del_btn.setToolTip("Remove session")
-        del_btn.setStyleSheet(_btn_ss.format(fg="#ff7b72", hover="#ffa198"))
+        del_btn.setStyleSheet(_btn_ss.format(fg="#ff4d5a", hover="#ff8a92"))
         del_btn.clicked.connect(lambda _c, sid=session.id: self.stop_session(sid))
         layout.addWidget(del_btn)
 
@@ -544,24 +544,24 @@ class MonitorTab(QWidget):
             pause_btn = getattr(cell, '_pause_btn', None)
             dot = self._table.cellWidget(row, 0)
 
-            # Stopped session (via Stop All) — dim dot, disable buttons, freeze stats
+            # Stopped session (via Stop All) - dim dot, disable buttons, freeze stats
             if not session.running:
                 if dot:
-                    dot.setStyleSheet("color: #484f58; font-size: 12pt;")
+                    dot.setStyleSheet("background-color: #52666f; margin: 7px 12px;")
                 if pause_btn:
                     pause_btn.setEnabled(False)
                 continue
 
-            # Paused session — show session colour on dot, swap button to ▶
+            # Paused session - show session colour on dot, swap button to play
             if session.engine.is_paused:
                 if dot:
-                    dot.setStyleSheet(f"color: {session.color}; font-size: 12pt;")
+                    dot.setStyleSheet(f"background-color: {session.color}; margin: 7px 12px;")
                 if pause_btn:
                     pause_btn.setText(">")
                     pause_btn.setToolTip("Resume monitoring")
                 continue
 
-            # Running session — health-based dot colour, ⏸ button
+            # Running session - health-based dot colour, pause button
             if pause_btn:
                 pause_btn.setText("||")
                 pause_btn.setToolTip("Pause monitoring")
@@ -571,12 +571,12 @@ class MonitorTab(QWidget):
 
             if dot:
                 if rtt is None or stats.loss_pct > 10:
-                    health = "#f85149"
+                    health = "#ff4d5a"
                 elif stats.loss_pct > 2 or (rtt is not None and rtt > 150):
-                    health = "#d29922"
+                    health = "#ffb43f"
                 else:
-                    health = "#3fb950"
-                dot.setStyleSheet(f"color: {health}; font-size: 12pt;")
+                    health = "#4be07c"
+                dot.setStyleSheet(f"background-color: {health}; margin: 7px 12px;")
 
             rtt_str  = f"{rtt:.0f} ms" if rtt is not None else "Timeout"
             loss_str = f"{stats.loss_pct:.1f}%"
@@ -592,18 +592,18 @@ class MonitorTab(QWidget):
                     item.setText(text)
                     if col == 2:
                         if rtt is None:
-                            item.setForeground(QColor("#f85149"))
+                            item.setForeground(QColor("#ff4d5a"))
                         elif rtt > 150:
-                            item.setForeground(QColor("#d29922"))
+                            item.setForeground(QColor("#ffb43f"))
                         else:
-                            item.setForeground(QColor("#c9d1d9"))
+                            item.setForeground(QColor("#d5ecf2"))
 
     # ------------------------------------------------------------------
     # Graph
     # ------------------------------------------------------------------
     def _add_graph_curve(self, session: _PingSession):
         curve = pg.PlotDataItem(
-            pen=pg.mkPen(color=session.color, width=2),
+            pen=pg.mkPen(color=session.color, width=1),
             name=session.label,
             connect='finite',
         )
@@ -626,15 +626,15 @@ class MonitorTab(QWidget):
 
     def _on_user_zoom(self):
         self._user_zoomed = True
-        self._zoom_btn.setText("↺ Live View")
-        self._zoom_btn.setStyleSheet("QPushButton { color: #3fb950; font-weight: bold; }")
+        self._zoom_btn.setText("Live View")
+        self._zoom_btn.setStyleSheet("QPushButton { color: #4be07c; font-weight: bold; }")
 
     def _reset_zoom(self):
         self._user_zoomed = False
         now = time.time()
         window_secs = self._window * (self._interval_ms / 1000.0)
         self._plot.setXRange(now - window_secs, now, padding=0.02)
-        self._zoom_btn.setText("● Live")
+        self._zoom_btn.setText("Live")
         self._zoom_btn.setStyleSheet("")
 
     # ------------------------------------------------------------------
