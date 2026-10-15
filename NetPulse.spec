@@ -5,8 +5,8 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],  # pure Python packages -- Analysis bundles them; datas would re-add __pycache__ .pyc files that shadow our edits at runtime
-    hiddenimports=['PySide6.QtSvg', 'PySide6.QtXml', 'pyqtgraph', 'dns.resolver', 'dns.reversename', 'whois', 'numpy'],
+    datas=[('assets', 'assets')],  # icons and UI arrows only; Python packages are bundled by Analysis (datas would re-add stale .pyc)
+    hiddenimports=['PySide6.QtSvg', 'PySide6.QtXml', 'PySide6.QtNetwork', 'pyqtgraph', 'dns.resolver', 'dns.reversename', 'dns.rdtypes.IN', 'dns.rdtypes.ANY', 'whois', 'numpy', 'sqlite3'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
