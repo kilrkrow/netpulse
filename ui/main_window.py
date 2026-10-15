@@ -50,8 +50,8 @@ class MainWindow(QMainWindow):
         self._hint_shown = False
         self.setWindowIcon(app_icon())
         self.setWindowTitle("NetPulse - Network Diagnostic Tool")
-        self.resize(1280, 820)
-        self.setMinimumSize(900, 600)
+        self.resize(1280, 860)
+        self.setMinimumSize(900, 640)
 
         self._current_stats: PingStats | None = None
         self._session_start: datetime.datetime | None = None

@@ -77,7 +77,7 @@ def main():
     for name in names:
         rt = RcRuntime(app_main.APP_VERSION, {"live": None, "ip-research": "healthy", "tools": "healthy"}.get(name, name))
         win = MainWindow(rt)
-        win.resize(1280, 800)
+        win.resize(1280, 860)
         win.show()
         rt.start()
         wait(14000 if name == "live" else 2500)

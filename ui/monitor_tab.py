@@ -462,7 +462,7 @@ class MonitorTab(QWidget):
 
         dot = QLabel(" ")
         dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dot.setStyleSheet(f"background-color: {session.color}; margin: 7px 12px;")
+        dot.setStyleSheet(f"background-color: {session.color}; margin: 8px 9px;")
         self._table.setCellWidget(row, 0, dot)
 
         self._table.setItem(
@@ -489,7 +489,7 @@ class MonitorTab(QWidget):
 
         _btn_ss = (
             "QPushButton {{"
-            "  color: {fg}; background: #0e141a; border: 1px solid #2c4150;"
+            "  color: {fg}; background: #0e141a; border: 1px solid #2c4150; min-width: 0; padding: 0;"
             "  border-radius: 0; font-size: 10pt; font-weight: bold;"
             "}}"
             "QPushButton:hover {{ background: #2c4150; color: {hover}; }}"
@@ -547,7 +547,7 @@ class MonitorTab(QWidget):
             # Stopped session (via Stop All) - dim dot, disable buttons, freeze stats
             if not session.running:
                 if dot:
-                    dot.setStyleSheet("background-color: #52666f; margin: 7px 12px;")
+                    dot.setStyleSheet("background-color: #52666f; margin: 8px 9px;")
                 if pause_btn:
                     pause_btn.setEnabled(False)
                 continue
@@ -555,7 +555,7 @@ class MonitorTab(QWidget):
             # Paused session - show session colour on dot, swap button to play
             if session.engine.is_paused:
                 if dot:
-                    dot.setStyleSheet(f"background-color: {session.color}; margin: 7px 12px;")
+                    dot.setStyleSheet(f"background-color: {session.color}; margin: 8px 9px;")
                 if pause_btn:
                     pause_btn.setText(">")
                     pause_btn.setToolTip("Resume monitoring")
@@ -576,7 +576,7 @@ class MonitorTab(QWidget):
                     health = "#ffb43f"
                 else:
                     health = "#4be07c"
-                dot.setStyleSheet(f"background-color: {health}; margin: 7px 12px;")
+                dot.setStyleSheet(f"background-color: {health}; margin: 8px 9px;")
 
             rtt_str  = f"{rtt:.0f} ms" if rtt is not None else "Timeout"
             loss_str = f"{stats.loss_pct:.1f}%"

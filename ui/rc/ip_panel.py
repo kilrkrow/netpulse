@@ -7,8 +7,8 @@ from typing import Callable, Optional
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+                               QSizePolicy, QVBoxLayout, QWidget)
 
 from core.rc.ipclass import skip_reason
 from core.rc.ipinfo import IpReport
@@ -67,16 +67,19 @@ class IpResearchPanel(QWidget):
         self.status.setStyleSheet(f"color: {theme.DIM};")
         root.addWidget(self.status)
 
-        self.grid = QGridLayout()
+        holder = QWidget()
+        self.grid = QGridLayout(holder)
+        self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setHorizontalSpacing(10)
-        self.grid.setVerticalSpacing(3)
-        self._keys = ["ADDRESS", "ASN", "OWNER", "PREFIX", "COUNTRY", "REGISTRY", "REVERSE DNS", "RDAP NAME",
-                      "RDAP ORG", "RDAP RANGE", "REGISTERED", "LAST CHANGED"]
+        self.grid.setVerticalSpacing(2)
+        self._keys = ["ADDRESS", "ASN / OWNER", "PREFIX", "REGISTRY", "REVERSE DNS", "RDAP NAME", "RDAP ORG",
+                      "RDAP RANGE", "DATES"]
         self._vals = {}
         for i, k in enumerate(self._keys):
             kl = QLabel(k)
             kl.setFont(theme.mono(7.5))
             kl.setStyleSheet(f"color: {theme.DIM};")
+            kl.setMinimumWidth(86)
             vl = QLabel("")
             vl.setFont(theme.mono(9.5))
             vl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -85,13 +88,19 @@ class IpResearchPanel(QWidget):
             self.grid.addWidget(vl, i, 1)
             self._vals[k] = (kl, vl)
         self.grid.setColumnStretch(1, 1)
-        root.addLayout(self.grid)
+        self.grid.setRowStretch(len(self._keys), 1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(holder)
+        holder.setStyleSheet(f"background: {theme.PANEL};")
+        root.addWidget(scroll, 1)
         self.errors = QLabel("")
         self.errors.setWordWrap(True)
         self.errors.setStyleSheet(f"color: {theme.WARN}; font-size: 8.5pt;")
         root.addWidget(self.errors)
-        root.addStretch()
-        self.footer = QLabel("Registry country is where a block was registered, not where a device is.")
+        self.footer = QLabel("Lookups send the address to Team Cymru, RDAP servers and your DNS resolver. "
+                             "Registry country is where a block was registered, not where a device is.")
         self.footer.setWordWrap(True)
         self.footer.setStyleSheet(f"color: {theme.DIMMER}; font-size: 8pt;")
         root.addWidget(self.footer)
@@ -108,7 +117,8 @@ class IpResearchPanel(QWidget):
     def _refresh_notice(self) -> None:
         allowed = self.settings.value.lookups_allowed
         self.allow.setVisible(not allowed)
-        self.notice.setStyleSheet(f"color: {theme.DIM if allowed else theme.WARN}; font-size: 8.5pt;")
+        self.notice.setVisible(not allowed)          # once allowed, the dim footer carries the same notice
+        self.footer.setVisible(allowed)
 
     def _allow(self) -> None:
         self.settings.value.lookups_allowed = True
@@ -179,19 +189,22 @@ class IpResearchPanel(QWidget):
             self.status.setStyleSheet(f"color: {theme.WARN};")
             return
         r = rep.rdap or {}
-        self._set("ASN", f"AS{rep.asn}" if rep.asn else "")
-        self._set("OWNER", rep.asn_name)
+        self._set("ASN / OWNER", (f"AS{rep.asn}  " if rep.asn else "") + (rep.asn_name or ""))
         self._set("PREFIX", rep.prefix)
-        self._set("COUNTRY", rep.country.upper() if rep.country else "")
-        self._set("REGISTRY", rep.registry.upper() if rep.registry else "")
+        reg = " / ".join(x for x in ((rep.country or "").upper(), (rep.registry or "").upper()) if x)
+        self._set("REGISTRY", reg)
         self._set("REVERSE DNS", rep.rdns or ("(none)" if rep.rdns_checked else ""))
         self._set("RDAP NAME", str(r.get("name", "")))
         self._set("RDAP ORG", str(r.get("org", "")))
         rng = f"{r['startAddress']} - {r['endAddress']}" if r.get("startAddress") else str(r.get("cidr", ""))
         self._set("RDAP RANGE", rng)
         ev = r.get("events", {}) or {}
-        self._set("REGISTERED", str(ev.get("registration", "")))
-        self._set("LAST CHANGED", str(ev.get("last changed", "")))
+        dates = []
+        if ev.get("registration"):
+            dates.append("registered " + str(ev["registration"]))
+        if ev.get("last changed"):
+            dates.append("changed " + str(ev["last changed"]))
+        self._set("DATES", ", ".join(dates))
         cached = [k for k, v in rep.cached.items() if v]
         if rep.has_data:
             self.status.setText("Results" + (f" (cached: {', '.join(cached)})" if cached else "") + ".")
