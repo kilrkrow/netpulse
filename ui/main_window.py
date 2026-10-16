@@ -5,12 +5,11 @@ import datetime
 import json
 import os
 
-from PySide6.QtCore import QSize, Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QPoint, QStandardPaths, Qt, QTimer, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
@@ -28,6 +27,7 @@ from core.dossier import DossierEngine
 from core.ping_engine import PingStats
 from core.traceroute import TracerouteEngine
 from ui.alerts_tab import AlertsTab
+from ui.dock import EDGE as DOCK_EDGE, ActionDock
 from ui.dossier_tab import DossierTab
 from ui.monitor_tab import MonitorTab
 from ui.traceroute_tab import TracerouteTab
@@ -35,22 +35,6 @@ from ui.rc.page import OutagePanel, PathPage
 from ui.rc.settings_dialog import SettingsDialog
 from ui.rc.tray import TrayManager, app_icon
 from ui.rc.widgets import harden_text
-
-
-class _TabCorner(QWidget):
-    """The widget at the right end of the tab row. QTabWidget sizes the tab bar from sizeHint(), which a style sheet
-    can shrink below the real button sizes, so it is pinned to the exact size the buttons need."""
-
-    def __init__(self, w: int, h: int):
-        super().__init__()
-        self._fixed = QSize(w, h)
-        self.setFixedSize(self._fixed)
-
-    def sizeHint(self) -> QSize:
-        return self._fixed
-
-    def minimumSizeHint(self) -> QSize:
-        return self._fixed
 
 
 class MainWindow(QMainWindow):
@@ -113,8 +97,8 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._tracer_tab, "Traceroute")
         self._tabs.addTab(self._dossier_tab, "Dossier")
         self._tabs.addTab(self._alerts_tab, "Alerts")
-        self._tabs.setCornerWidget(self._build_corner(), Qt.Corner.TopRightCorner)
         root.addWidget(self._tabs)
+        self._build_dock()
 
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
@@ -136,35 +120,79 @@ class MainWindow(QMainWindow):
             self._status_bar.addPermanentWidget(sim)
         self._status_bar.addPermanentWidget(self._sb_version)
 
-    def _build_corner(self) -> QWidget:
-        """Settings and Export sit in the tab row itself (right end), so nothing is stacked above the tabs and no
-        tab ever changes the height of the row. The Interval / Timeout / Graph controls live in the Settings dialog.
-
-        Spacing: 24 px tall buttons centred in the 30 px tab row (3 px above and below, so they never touch the
-        pane border), 6 px between buttons (same as the Monitor tab row), the same 8 px window margin on the right."""
-        row_h, btn_h, gap = 30, 24, 6
-        fm = self.fontMetrics()
-        btn_w = max(82, max(fm.horizontalAdvance(s) for s in ("Settings", "Export")) + 24)    # 82 px with Segoe UI
-        box = _TabCorner(btn_w * 2 + gap, row_h)
-        lay = QHBoxLayout(box)
-        lay.setContentsMargins(0, (row_h - btn_h) // 2, 0, (row_h - btn_h) // 2)
-        lay.setSpacing(gap)
-
-        self._settings_btn = QPushButton("Settings")
-        self._settings_btn.setToolTip("Probe target, ping defaults (interval, timeout, graph), notifications and labels")
+    def _build_dock(self) -> None:
+        """Settings (gear) and Export live in one floating dock over the top-right of the content area: the same
+        screen position on every tab, nothing in the tab row, nothing in a layout (so nothing can shift).
+        Each tab reserves a same-sized slot at the right end of its top row (ui/dock.py)."""
+        self._dock = ActionDock(self._tabs)
+        self._share_btn = self._dock.share_btn
+        self._settings_btn = self._dock.settings_btn
+        self._export_btn = self._dock.export_btn
+        self._share_btn.clicked.connect(self._share_menu)
         self._settings_btn.setEnabled(bool(self.rt))
         self._settings_btn.clicked.connect(self._open_settings)
-        lay.addWidget(self._settings_btn)
-
-        self._export_btn = QPushButton("Export")
-        self._export_btn.setToolTip("Save the Monitor tab ping results as CSV")
         self._export_btn.clicked.connect(self._export_csv)
-        lay.addWidget(self._export_btn)
+        self._tabs.installEventFilter(self)
+        self._tabs.currentChanged.connect(lambda _i: self._place_dock())
+        self._place_dock()
 
-        for b in (self._settings_btn, self._export_btn):
-            b.setFixedSize(btn_w, btn_h)
-            b.setStyleSheet("padding: 0 8px; min-width: 0;")
-        return box
+    # ------------------------------------------------------------------
+    # Share screenshot (a picture of this window: copy to the clipboard or save as PNG)
+    # ------------------------------------------------------------------
+    def _screenshot_name(self) -> str:
+        return datetime.datetime.now().strftime("netpulse_%Y%m%d_%H%M%S.png")
+
+    def _screenshot_pixmap(self):
+        return self.grab()
+
+    def _copy_screenshot(self) -> bool:
+        pm = self._screenshot_pixmap()
+        if pm.isNull():
+            return False
+        QGuiApplication.clipboard().setPixmap(pm)
+        self._sb_label.setText("  Screenshot copied to the clipboard")
+        return True
+
+    def _save_screenshot_to(self, path: str) -> bool:
+        pm = self._screenshot_pixmap()
+        if pm.isNull() or not path:
+            return False
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        ok = pm.save(path, "PNG")
+        if ok:
+            self._sb_label.setText(f"  Screenshot saved to {path}")
+        return ok
+
+    def _save_screenshot(self) -> None:
+        folder = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation) or os.path.expanduser("~")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Screenshot", os.path.join(folder, self._screenshot_name()),
+                                              "PNG Images (*.png)")
+        if path and not self._save_screenshot_to(path):
+            QMessageBox.warning(self, "Screenshot", "The screenshot could not be saved.")
+
+    def _build_share_menu(self) -> QMenu:
+        m = QMenu(self)
+        m.addAction("Copy screenshot to clipboard").triggered.connect(self._copy_screenshot)
+        m.addAction("Save screenshot as PNG...").triggered.connect(self._save_screenshot)
+        return m
+
+    def _share_menu(self) -> None:
+        self._build_share_menu().exec(self._share_btn.mapToGlobal(QPoint(0, self._share_btn.height() + 2)))
+
+    def _place_dock(self) -> None:
+        pane = self._tabs.currentWidget()
+        if pane is None:
+            return
+        self._dock.adjustSize()
+        top_left = pane.mapTo(self._tabs, QPoint(0, 0))
+        self._dock.move(top_left.x() + pane.width() - DOCK_EDGE - self._dock.width(), top_left.y() + DOCK_EDGE)
+        self._dock.raise_()
+
+    def eventFilter(self, obj, event):
+        if obj is self._tabs and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
+            QTimer.singleShot(0, self._place_dock)
+        return super().eventFilter(obj, event)
 
     def _build_tray(self):
         self._tray_mgr = TrayManager(

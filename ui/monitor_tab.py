@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from core.alerts import AlertManager
 from core.ping_engine import PingEngine, PingResult, PingStats
 from core.process_monitor import ProcessWatcher, get_running_processes
+from ui.dock import add_slot
 
 pg.setConfigOptions(antialias=True)
 
@@ -119,9 +120,14 @@ class MonitorTab(QWidget):
 
         root.addLayout(self._build_controls())
 
+        # Status line: the message on the left, the Table / Graph view toggle at the right end
+        status_row = QHBoxLayout()
+        status_row.setSpacing(6)
         self._status_lbl = QLabel("Add a target above to start monitoring.")
         self._status_lbl.setStyleSheet("color: #8aa2ad; font-size: 9pt;")
-        root.addWidget(self._status_lbl)
+        status_row.addWidget(self._status_lbl, 1)
+        self._build_view_toggle(status_row)
+        root.addLayout(status_row)
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._build_table_view())
@@ -189,6 +195,12 @@ class MonitorTab(QWidget):
 
         ctrl.addStretch()
 
+        # The Settings / Export dock floats over this slot at the right end of the row (see ui/dock.py)
+        add_slot(ctrl)
+
+        return ctrl
+
+    def _build_view_toggle(self, ctrl: QHBoxLayout) -> None:
         # -- View toggle ------------------------------------------------
         self._table_btn = QPushButton("Table")
         self._table_btn.setToolTip("Table view")
@@ -204,8 +216,6 @@ class MonitorTab(QWidget):
         self._graph_btn.setFixedWidth(52)
         self._graph_btn.clicked.connect(lambda: self._set_view(self.VIEW_GRAPH))
         ctrl.addWidget(self._graph_btn)
-
-        return ctrl
 
     def _build_table_view(self) -> QWidget:
         w = QWidget()
