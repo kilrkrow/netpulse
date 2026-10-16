@@ -5,9 +5,10 @@ from __future__ import annotations
 import ipaddress
 
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLabel,
-                               QLineEdit, QMessageBox, QPushButton, QVBoxLayout)
+                               QLineEdit, QMessageBox, QPushButton, QSpinBox, QVBoxLayout)
 
 from core.rc.model import SEG_DISH, SEG_GATEWAY, SEG_INTERNET, SEGMENT_NAMES
+from core.rc.settings import GRAPH_POINTS, PING_INTERVAL_MS, PING_TIMEOUT_MS
 from ui.rc import theme
 
 
@@ -43,6 +44,16 @@ class SettingsDialog(QDialog):
         form.addRow("", self.autoid)
         lay.addLayout(form)
 
+        lay.addWidget(QLabel("MONITOR TAB: NEW PING SESSIONS"))
+        mon = QFormLayout()
+        self.ping_interval = self._ms_spin(PING_INTERVAL_MS, s.ping_interval_ms, " ms")
+        mon.addRow("Interval", self.ping_interval)
+        self.ping_timeout = self._ms_spin(PING_TIMEOUT_MS, s.ping_timeout_ms, " ms")
+        mon.addRow("Timeout", self.ping_timeout)
+        self.graph_points = self._ms_spin(GRAPH_POINTS, s.graph_points, " pts")
+        mon.addRow("Graph", self.graph_points)
+        lay.addLayout(mon)
+
         lay.addWidget(QLabel("YOUR HOP LABELS"))
         self.overrides = QComboBox()
         self._fill_overrides()
@@ -59,6 +70,14 @@ class SettingsDialog(QDialog):
         box.accepted.connect(self._save)
         box.rejected.connect(self.reject)
         lay.addWidget(box)
+
+    @staticmethod
+    def _ms_spin(rng, value, suffix) -> QSpinBox:
+        sp = QSpinBox()
+        sp.setRange(rng[0], rng[1])
+        sp.setSuffix(suffix)
+        sp.setValue(value)
+        return sp
 
     def _fill_overrides(self) -> None:
         self.overrides.clear()
@@ -95,6 +114,9 @@ class SettingsDialog(QDialog):
         if s.lookups_allowed:
             s.lookups_notice_seen = True
         s.auto_identify_hops = self.autoid.isChecked()
+        s.ping_interval_ms = int(self.ping_interval.value())
+        s.ping_timeout_ms = int(self.ping_timeout.value())
+        s.graph_points = int(self.graph_points.value())
         self.store.save()
         if self.on_applied:
             self.on_applied()

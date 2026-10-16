@@ -10,14 +10,12 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QStatusBar,
     QSystemTrayIcon,
     QTabWidget,
@@ -83,9 +81,6 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(8, 8, 8, 4)
         root.setSpacing(6)
 
-        self._toolbar = self._build_toolbar()
-        root.addWidget(self._toolbar)
-
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
@@ -102,9 +97,8 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._tracer_tab, "Traceroute")
         self._tabs.addTab(self._dossier_tab, "Dossier")
         self._tabs.addTab(self._alerts_tab, "Alerts")
+        self._tabs.setCornerWidget(self._build_corner(), Qt.Corner.TopRightCorner)
         root.addWidget(self._tabs)
-        self._toolbar.setVisible(False)
-        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
@@ -126,47 +120,29 @@ class MainWindow(QMainWindow):
             self._status_bar.addPermanentWidget(sim)
         self._status_bar.addPermanentWidget(self._sb_version)
 
-    def _build_toolbar(self) -> QWidget:
-        bar = QFrame()
-        bar.setObjectName("toolbar")
-        bar.setStyleSheet("#toolbar { background: #0a0e12; border: 1px solid #1c2a34; padding: 4px; }")
+    def _build_corner(self) -> QWidget:
+        """Settings and Export sit in the tab row itself (right end), so nothing is stacked above the tabs and no
+        tab ever changes the height of the row. The Interval / Timeout / Graph controls live in the Settings dialog."""
+        box = QWidget()
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
 
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
-
-        layout.addWidget(QLabel("Interval:"))
-        self._interval_spin = QSpinBox()
-        self._interval_spin.setRange(100, 60000)
-        self._interval_spin.setValue(1000)
-        self._interval_spin.setSuffix(" ms")
-        self._interval_spin.setFixedWidth(116)
-        layout.addWidget(self._interval_spin)
-
-        layout.addWidget(QLabel("Timeout:"))
-        self._timeout_spin = QSpinBox()
-        self._timeout_spin.setRange(200, 10000)
-        self._timeout_spin.setValue(2000)
-        self._timeout_spin.setSuffix(" ms")
-        self._timeout_spin.setFixedWidth(116)
-        layout.addWidget(self._timeout_spin)
-
-        layout.addWidget(QLabel("Graph:"))
-        self._window_spin = QSpinBox()
-        self._window_spin.setRange(30, 3600)
-        self._window_spin.setValue(300)
-        self._window_spin.setSuffix(" pts")
-        self._window_spin.setFixedWidth(106)
-        layout.addWidget(self._window_spin)
-
-        layout.addStretch()
+        self._settings_btn = QPushButton("Settings")
+        self._settings_btn.setToolTip("Probe target, ping defaults (interval, timeout, graph), notifications and labels")
+        self._settings_btn.setEnabled(bool(self.rt))
+        self._settings_btn.clicked.connect(self._open_settings)
+        lay.addWidget(self._settings_btn)
 
         self._export_btn = QPushButton("Export")
-        self._export_btn.setFixedWidth(90)
+        self._export_btn.setToolTip("Save the Monitor tab ping results as CSV")
         self._export_btn.clicked.connect(self._export_csv)
-        layout.addWidget(self._export_btn)
+        lay.addWidget(self._export_btn)
 
-        return bar
+        for b in (self._settings_btn, self._export_btn):
+            b.setFixedSize(80, 24)
+            b.setStyleSheet("padding: 0 8px;")
+        return box
 
     def _build_tray(self):
         self._tray_mgr = TrayManager(
@@ -181,6 +157,7 @@ class MainWindow(QMainWindow):
     def _wire_runtime(self):
         if not self.rt:
             return
+        self._apply_monitor_settings()
         self.rt.bridge.updated.connect(self._on_rc_update)
         self.rt.bridge.outages_changed.connect(self._outage_page.refresh)
         self._path_page.copy_report.connect(self._copy_report)
@@ -211,9 +188,6 @@ class MainWindow(QMainWindow):
         elif verdict.kind == "healthy":
             self._in_outage = False
 
-    def _on_tab_changed(self, idx: int):
-        self._toolbar.setVisible(self._tabs.widget(idx) is self._monitor_tab)
-
     def _copy_report(self):
         if not self.rt:
             return
@@ -225,7 +199,21 @@ class MainWindow(QMainWindow):
         if not self.rt:
             return
         self.show()
-        SettingsDialog(self.rt.settings, on_applied=self.rt.apply_settings, parent=self).exec()
+        self._settings_dialog().exec()
+
+    def _settings_dialog(self) -> SettingsDialog:
+        return SettingsDialog(self.rt.settings, on_applied=self._apply_settings, parent=self)
+
+    def _apply_settings(self):
+        self.rt.apply_settings()
+        self._apply_monitor_settings()
+
+    def _apply_monitor_settings(self):
+        """Interval / Timeout / Graph become the defaults of the Monitor tab's next ping sessions."""
+        s = self.rt.settings.value
+        self._monitor_tab.set_interval(s.ping_interval_ms)
+        self._monitor_tab.set_timeout(s.ping_timeout_ms)
+        self._monitor_tab.set_window(s.graph_points)
 
     def _show_window(self):
         self.show()
@@ -242,11 +230,6 @@ class MainWindow(QMainWindow):
     # Signal wiring
     # ------------------------------------------------------------------
     def _connect_signals(self):
-        # Toolbar spins -> MonitorTab defaults
-        self._interval_spin.valueChanged.connect(self._monitor_tab.set_interval)
-        self._timeout_spin.valueChanged.connect(self._monitor_tab.set_timeout)
-        self._window_spin.valueChanged.connect(self._monitor_tab.set_window)
-
         # MonitorTab -> MainWindow
         self._monitor_tab.worst_stats_updated.connect(self._on_stats)
         self._monitor_tab.session_started.connect(self._on_session_started)
