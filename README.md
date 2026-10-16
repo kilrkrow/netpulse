@@ -17,6 +17,25 @@ When your internet goes down, you can't tell whether it's your router, your dish
 - **Runs unprivileged** — uses the Windows ICMP API directly; no admin rights, no raw sockets, no router login
 
 ## Quick start
+Dish detection: CGNAT addresses (100.64.0.0/10), the dish at `192.168.100.1` when reachable, and hops whose owner is Starlink (AS14593, only after you allow lookups).
+
+### Tray
+
+Right-click the tray icon for the current status, **Copy report**, **Start with Windows**, **Add to Start menu**, **Settings...**, **About** and **Exit**. Closing the window keeps NetPulse running in the tray; **Exit NetPulse** quits it completely. `NetPulse.exe --background` starts hidden in the tray (this is what **Start with Windows** registers).
+
+### Where data lives
+
+`%LOCALAPPDATA%\NetPulse\` holds `netpulse.db` (outage log and lookup cache) and `settings.json`. The older ping/dossier history stays in `%APPDATA%\NetPulse\history.json`. Nothing is written to the program folder.
+
+## Classic tools
+
+- **Monitor** - ICMP ping sessions with response times and packet loss, per-process connection watching
+  (the ping Interval, Timeout and Graph length for new sessions are in **Settings**, the gear icon at the top right of every tab; next to it are the **Export CSV** and **Share screenshot** icons)
+- **Traceroute** - multi-hop path analysis to any host
+- **Dossier** - DNS, GeoIP and WHOIS for a domain or IP
+- **Alerts** - configurable latency, loss and jitter rules with tray notifications
+
+## Run from source
 
 ```bash
 pip install -r requirements.txt
