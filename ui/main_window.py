@@ -5,7 +5,7 @@ import datetime
 import json
 import os
 
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,6 +35,22 @@ from ui.rc.page import OutagePanel, PathPage
 from ui.rc.settings_dialog import SettingsDialog
 from ui.rc.tray import TrayManager, app_icon
 from ui.rc.widgets import harden_text
+
+
+class _TabCorner(QWidget):
+    """The widget at the right end of the tab row. QTabWidget sizes the tab bar from sizeHint(), which a style sheet
+    can shrink below the real button sizes, so it is pinned to the exact size the buttons need."""
+
+    def __init__(self, w: int, h: int):
+        super().__init__()
+        self._fixed = QSize(w, h)
+        self.setFixedSize(self._fixed)
+
+    def sizeHint(self) -> QSize:
+        return self._fixed
+
+    def minimumSizeHint(self) -> QSize:
+        return self._fixed
 
 
 class MainWindow(QMainWindow):
@@ -122,11 +138,17 @@ class MainWindow(QMainWindow):
 
     def _build_corner(self) -> QWidget:
         """Settings and Export sit in the tab row itself (right end), so nothing is stacked above the tabs and no
-        tab ever changes the height of the row. The Interval / Timeout / Graph controls live in the Settings dialog."""
-        box = QWidget()
+        tab ever changes the height of the row. The Interval / Timeout / Graph controls live in the Settings dialog.
+
+        Spacing: 24 px tall buttons centred in the 30 px tab row (3 px above and below, so they never touch the
+        pane border), 6 px between buttons (same as the Monitor tab row), the same 8 px window margin on the right."""
+        row_h, btn_h, gap = 30, 24, 6
+        fm = self.fontMetrics()
+        btn_w = max(82, max(fm.horizontalAdvance(s) for s in ("Settings", "Export")) + 24)    # 82 px with Segoe UI
+        box = _TabCorner(btn_w * 2 + gap, row_h)
         lay = QHBoxLayout(box)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setContentsMargins(0, (row_h - btn_h) // 2, 0, (row_h - btn_h) // 2)
+        lay.setSpacing(gap)
 
         self._settings_btn = QPushButton("Settings")
         self._settings_btn.setToolTip("Probe target, ping defaults (interval, timeout, graph), notifications and labels")
@@ -140,8 +162,8 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._export_btn)
 
         for b in (self._settings_btn, self._export_btn):
-            b.setFixedSize(80, 22)
-            b.setStyleSheet("padding: 0 8px;")
+            b.setFixedSize(btn_w, btn_h)
+            b.setStyleSheet("padding: 0 8px; min-width: 0;")
         return box
 
     def _build_tray(self):

@@ -30,6 +30,7 @@ class SettingsDialog(QDialog):
         self.interval.setSingleStep(0.5)
         self.interval.setSuffix(" s")
         self.interval.setValue(s.interval_s)
+        self.interval.setFixedHeight(29)
         form.addRow("Probe interval", self.interval)
         self.dish = QLineEdit(s.dish_lan_ip)
         form.addRow("Dish address on the LAN", self.dish)
@@ -42,7 +43,7 @@ class SettingsDialog(QDialog):
         self.autoid = QCheckBox("Identify hops by owner so the Starlink dish can be recognized")
         self.autoid.setChecked(s.auto_identify_hops)
         form.addRow("", self.autoid)
-        form.addRow(QLabel("MONITOR TAB: NEW PING SESSIONS"))
+        form.addRow(self._section("MONITOR TAB: NEW PING SESSIONS"))
         self.ping_interval = self._spin(PING_INTERVAL_MS, s.ping_interval_ms, " ms")
         form.addRow("Interval", self.ping_interval)
         self.ping_timeout = self._spin(PING_TIMEOUT_MS, s.ping_timeout_ms, " ms")
@@ -51,7 +52,7 @@ class SettingsDialog(QDialog):
         form.addRow("Graph", self.graph_points)
         lay.addLayout(form)
 
-        lay.addWidget(QLabel("YOUR HOP LABELS"))
+        lay.addWidget(self._section("YOUR HOP LABELS"))
         self.overrides = QComboBox()
         self._fill_overrides()
         lay.addWidget(self.overrides)
@@ -69,11 +70,18 @@ class SettingsDialog(QDialog):
         lay.addWidget(box)
 
     @staticmethod
+    def _section(text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setContentsMargins(0, 8, 0, 0)         # a clear gap above each section heading
+        return lbl
+
+    @staticmethod
     def _spin(rng, value, suffix) -> QSpinBox:
         sp = QSpinBox()
         sp.setRange(rng[0], rng[1])
         sp.setSuffix(suffix)
         sp.setValue(value)
+        sp.setFixedHeight(29)                       # same height as the line edits and combo boxes in this dialog
         return sp
 
     def _fill_overrides(self) -> None:

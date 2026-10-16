@@ -167,3 +167,24 @@ def test_tray_settings_and_button_open_the_same_dialog(app, tmp_path, monkeypatc
         assert opened == [1, 1]
     finally:
         close(rt, win)
+
+
+def test_corner_buttons_have_comfortable_spacing(app, tmp_path, monkeypatch):
+    """Hit targets >= 24 px tall, 6 px apart, inside the window, and clear of the pane border and the window edge."""
+    rt, win = make_window(tmp_path, monkeypatch)
+    try:
+        spin(300)
+        tabs = win._tabs
+        pane_top = tabs.currentWidget().mapTo(tabs, tabs.currentWidget().rect().topLeft()).y()
+        s, e = win._settings_btn, win._export_btn
+        sg, eg = s.mapTo(tabs, s.rect().topLeft()), e.mapTo(tabs, e.rect().topLeft())
+        assert s.height() >= 24 and e.height() >= 24
+        assert eg.x() - (sg.x() + s.width()) == 6
+        if tabs.tabBar().sizeHint().height() >= 30:      # Segoe UI (Windows); the offscreen fallback font has a shorter row
+            assert sg.y() >= 2 and sg.y() + s.height() <= pane_top - 2, (sg.y(), s.height(), pane_top)
+        assert eg.x() + e.width() <= tabs.width(), "Export must not run past the tab widget"
+        assert tabs.tabBar().geometry().right() < sg.x(), "tabs and buttons must not overlap"
+        for b in (s, e):
+            assert b.fontMetrics().horizontalAdvance(b.text()) + 16 <= b.width()      # at least 8 px each side of the text
+    finally:
+        close(rt, win)
