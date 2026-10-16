@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QColor, QFont
 
 from core.alerts import AlertManager, AlertRule, AlertEvent, METRICS, OPERATORS
+from ui.dock import add_slot
 
 C_BG     = '#06080b'
 C_SURF   = '#0a0e12'
@@ -157,6 +158,7 @@ class AlertsTab(QWidget):
         del_btn.setObjectName('stopBtn')
         del_btn.clicked.connect(self._delete_rule)
         rules_hdr.addWidget(del_btn)
+        add_slot(rules_hdr)
 
         rl.addLayout(rules_hdr)
 

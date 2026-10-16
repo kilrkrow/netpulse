@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.dossier import DossierEngine, GeoInfo, WhoisInfo
+from ui.dock import add_slot
 
 C_SURF = "#0a0e12"
 C_BORDER = "#1c2a34"
@@ -105,6 +106,7 @@ class DossierTab(QWidget):
         self._lookup_btn.setFixedWidth(110)
         self._lookup_btn.clicked.connect(self._lookup)
         bar.addWidget(self._lookup_btn)
+        add_slot(bar)
         root.addLayout(bar)
 
         self._status_lbl = QLabel("Enter a domain or IP and click Lookup.")

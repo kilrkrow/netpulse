@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSizePolicy, QT
 
 from core.rc.model import KIND_DEGRADED, KIND_OUTAGE, Verdict
 from core.rc.outages import fmt_duration, fmt_time
+from ui.dock import add_slot
 from ui.rc import theme
 
 STATUS_TAG = {"ok": "OK", "info": "--", "warn": "!!", "fail": "XX"}
@@ -51,7 +52,7 @@ class VerdictPanel(QWidget):
         super().__init__(parent)
         self._last_html = ""
         root = QHBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 10)
+        root.setContentsMargins(12, 8, 8, 10)        # 8 px top and right: the dock slot sits where it does on the other tabs
         root.setSpacing(14)
         self.block = StatusBlock()
         root.addWidget(self.block, 0, Qt.AlignmentFlag.AlignTop)
@@ -80,6 +81,8 @@ class VerdictPanel(QWidget):
         root.addLayout(mid, 1)
 
         side = QVBoxLayout()
+        side.setSpacing(6)
+        add_slot(side)
         self.copy_btn = QPushButton("Copy report")
         self.copy_btn.setObjectName("primary")
         self.copy_btn.setToolTip("Copy a plain-text report of this verdict, the path and recent outages to the clipboard")

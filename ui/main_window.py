@@ -5,19 +5,16 @@ import datetime
 import json
 import os
 
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QPoint, QStandardPaths, Qt, QTimer, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
-    QFrame,
-    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QStatusBar,
     QSystemTrayIcon,
     QTabWidget,
@@ -30,6 +27,7 @@ from core.dossier import DossierEngine
 from core.ping_engine import PingStats
 from core.traceroute import TracerouteEngine
 from ui.alerts_tab import AlertsTab
+from ui.dock import EDGE as DOCK_EDGE, ActionDock
 from ui.dossier_tab import DossierTab
 from ui.monitor_tab import MonitorTab
 from ui.traceroute_tab import TracerouteTab
@@ -83,9 +81,6 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(8, 8, 8, 4)
         root.setSpacing(6)
 
-        self._toolbar = self._build_toolbar()
-        root.addWidget(self._toolbar)
-
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
 
@@ -103,8 +98,7 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._dossier_tab, "Dossier")
         self._tabs.addTab(self._alerts_tab, "Alerts")
         root.addWidget(self._tabs)
-        self._toolbar.setVisible(False)
-        self._tabs.currentChanged.connect(self._on_tab_changed)
+        self._build_dock()
 
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
@@ -126,47 +120,79 @@ class MainWindow(QMainWindow):
             self._status_bar.addPermanentWidget(sim)
         self._status_bar.addPermanentWidget(self._sb_version)
 
-    def _build_toolbar(self) -> QWidget:
-        bar = QFrame()
-        bar.setObjectName("toolbar")
-        bar.setStyleSheet("#toolbar { background: #0a0e12; border: 1px solid #1c2a34; padding: 4px; }")
-
-        layout = QHBoxLayout(bar)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
-
-        layout.addWidget(QLabel("Interval:"))
-        self._interval_spin = QSpinBox()
-        self._interval_spin.setRange(100, 60000)
-        self._interval_spin.setValue(1000)
-        self._interval_spin.setSuffix(" ms")
-        self._interval_spin.setFixedWidth(116)
-        layout.addWidget(self._interval_spin)
-
-        layout.addWidget(QLabel("Timeout:"))
-        self._timeout_spin = QSpinBox()
-        self._timeout_spin.setRange(200, 10000)
-        self._timeout_spin.setValue(2000)
-        self._timeout_spin.setSuffix(" ms")
-        self._timeout_spin.setFixedWidth(116)
-        layout.addWidget(self._timeout_spin)
-
-        layout.addWidget(QLabel("Graph:"))
-        self._window_spin = QSpinBox()
-        self._window_spin.setRange(30, 3600)
-        self._window_spin.setValue(300)
-        self._window_spin.setSuffix(" pts")
-        self._window_spin.setFixedWidth(106)
-        layout.addWidget(self._window_spin)
-
-        layout.addStretch()
-
-        self._export_btn = QPushButton("Export")
-        self._export_btn.setFixedWidth(90)
+    def _build_dock(self) -> None:
+        """Settings (gear) and Export live in one floating dock over the top-right of the content area: the same
+        screen position on every tab, nothing in the tab row, nothing in a layout (so nothing can shift).
+        Each tab reserves a same-sized slot at the right end of its top row (ui/dock.py)."""
+        self._dock = ActionDock(self._tabs)
+        self._share_btn = self._dock.share_btn
+        self._settings_btn = self._dock.settings_btn
+        self._export_btn = self._dock.export_btn
+        self._share_btn.clicked.connect(self._share_menu)
+        self._settings_btn.setEnabled(bool(self.rt))
+        self._settings_btn.clicked.connect(self._open_settings)
         self._export_btn.clicked.connect(self._export_csv)
-        layout.addWidget(self._export_btn)
+        self._tabs.installEventFilter(self)
+        self._tabs.currentChanged.connect(lambda _i: self._place_dock())
+        self._place_dock()
 
-        return bar
+    # ------------------------------------------------------------------
+    # Share screenshot (a picture of this window: copy to the clipboard or save as PNG)
+    # ------------------------------------------------------------------
+    def _screenshot_name(self) -> str:
+        return datetime.datetime.now().strftime("netpulse_%Y%m%d_%H%M%S.png")
+
+    def _screenshot_pixmap(self):
+        return self.grab()
+
+    def _copy_screenshot(self) -> bool:
+        pm = self._screenshot_pixmap()
+        if pm.isNull():
+            return False
+        QGuiApplication.clipboard().setPixmap(pm)
+        self._sb_label.setText("  Screenshot copied to the clipboard")
+        return True
+
+    def _save_screenshot_to(self, path: str) -> bool:
+        pm = self._screenshot_pixmap()
+        if pm.isNull() or not path:
+            return False
+        if not path.lower().endswith(".png"):
+            path += ".png"
+        ok = pm.save(path, "PNG")
+        if ok:
+            self._sb_label.setText(f"  Screenshot saved to {path}")
+        return ok
+
+    def _save_screenshot(self) -> None:
+        folder = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation) or os.path.expanduser("~")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Screenshot", os.path.join(folder, self._screenshot_name()),
+                                              "PNG Images (*.png)")
+        if path and not self._save_screenshot_to(path):
+            QMessageBox.warning(self, "Screenshot", "The screenshot could not be saved.")
+
+    def _build_share_menu(self) -> QMenu:
+        m = QMenu(self)
+        m.addAction("Copy screenshot to clipboard").triggered.connect(self._copy_screenshot)
+        m.addAction("Save screenshot as PNG...").triggered.connect(self._save_screenshot)
+        return m
+
+    def _share_menu(self) -> None:
+        self._build_share_menu().exec(self._share_btn.mapToGlobal(QPoint(0, self._share_btn.height() + 2)))
+
+    def _place_dock(self) -> None:
+        pane = self._tabs.currentWidget()
+        if pane is None:
+            return
+        self._dock.adjustSize()
+        top_left = pane.mapTo(self._tabs, QPoint(0, 0))
+        self._dock.move(top_left.x() + pane.width() - DOCK_EDGE - self._dock.width(), top_left.y() + DOCK_EDGE)
+        self._dock.raise_()
+
+    def eventFilter(self, obj, event):
+        if obj is self._tabs and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
+            QTimer.singleShot(0, self._place_dock)
+        return super().eventFilter(obj, event)
 
     def _build_tray(self):
         self._tray_mgr = TrayManager(
@@ -181,6 +207,7 @@ class MainWindow(QMainWindow):
     def _wire_runtime(self):
         if not self.rt:
             return
+        self._apply_monitor_settings()
         self.rt.bridge.updated.connect(self._on_rc_update)
         self.rt.bridge.outages_changed.connect(self._outage_page.refresh)
         self._path_page.copy_report.connect(self._copy_report)
@@ -211,9 +238,6 @@ class MainWindow(QMainWindow):
         elif verdict.kind == "healthy":
             self._in_outage = False
 
-    def _on_tab_changed(self, idx: int):
-        self._toolbar.setVisible(self._tabs.widget(idx) is self._monitor_tab)
-
     def _copy_report(self):
         if not self.rt:
             return
@@ -225,7 +249,21 @@ class MainWindow(QMainWindow):
         if not self.rt:
             return
         self.show()
-        SettingsDialog(self.rt.settings, on_applied=self.rt.apply_settings, parent=self).exec()
+        self._settings_dialog().exec()
+
+    def _settings_dialog(self) -> SettingsDialog:
+        return SettingsDialog(self.rt.settings, on_applied=self._apply_settings, parent=self)
+
+    def _apply_settings(self):
+        self.rt.apply_settings()
+        self._apply_monitor_settings()
+
+    def _apply_monitor_settings(self):
+        """Interval / Timeout / Graph become the defaults of the Monitor tab's next ping sessions."""
+        s = self.rt.settings.value
+        self._monitor_tab.set_interval(s.ping_interval_ms)
+        self._monitor_tab.set_timeout(s.ping_timeout_ms)
+        self._monitor_tab.set_window(s.graph_points)
 
     def _show_window(self):
         self.show()
@@ -242,11 +280,6 @@ class MainWindow(QMainWindow):
     # Signal wiring
     # ------------------------------------------------------------------
     def _connect_signals(self):
-        # Toolbar spins -> MonitorTab defaults
-        self._interval_spin.valueChanged.connect(self._monitor_tab.set_interval)
-        self._timeout_spin.valueChanged.connect(self._monitor_tab.set_timeout)
-        self._window_spin.valueChanged.connect(self._monitor_tab.set_window)
-
         # MonitorTab -> MainWindow
         self._monitor_tab.worst_stats_updated.connect(self._on_stats)
         self._monitor_tab.session_started.connect(self._on_session_started)

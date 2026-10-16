@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.traceroute import TracerouteEngine, TracerouteHop
+from ui.dock import add_slot
 
 C_GREEN = "#4be07c"
 C_YELLOW = "#ffb43f"
@@ -96,6 +97,7 @@ class TracerouteTab(QWidget):
         self._monitor_path_btn.setEnabled(False)
         self._monitor_path_btn.clicked.connect(self._monitor_all_hops)
         toolbar.addWidget(self._monitor_path_btn)
+        add_slot(toolbar)
 
         root.addLayout(toolbar)
 

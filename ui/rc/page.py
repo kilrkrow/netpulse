@@ -14,6 +14,7 @@ from core.rc.ipclass import classify_ip
 from core.rc.model import (SEG_DISH, SEG_GATEWAY, SEG_INTERNET, SEG_PC, SEGMENT_NAMES, SEGMENTS, PathSnapshot, Verdict,
                            compute_stats)
 from core.rc.outages import fmt_duration, fmt_time, segment_label
+from ui.dock import add_slot
 from ui.rc import theme
 from ui.rc.ip_panel import IpResearchPanel
 from ui.rc.path_view import PathView
@@ -178,7 +179,7 @@ class OutagePanel(QWidget):
         super().__init__(parent)
         self.ctl = controller
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(8, 8, 8, 8)          # the same 8 px as the Monitor / Traceroute / Dossier / Alerts pages
         root.setSpacing(8)
         head = QHBoxLayout()
         t = QLabel("DISCONNECT LOG")
@@ -196,6 +197,7 @@ class OutagePanel(QWidget):
         self.clear_btn.clicked.connect(self._clear)
         head.addWidget(self.copy_btn)
         head.addWidget(self.clear_btn)
+        add_slot(head)
         root.addLayout(head)
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)

@@ -119,6 +119,7 @@ QPushButton {{
 QPushButton:hover {{ border-color: {CYAN}; color: #ffffff; }}
 QPushButton:pressed {{ background: #0b2a31; }}
 QPushButton:disabled {{ color: {DIMMER}; border-color: {GRID}; }}
+QPushButton#iconBtn {{ min-width: 27px; max-width: 27px; min-height: 27px; max-height: 27px; padding: 0; }}
 QPushButton#startBtn {{ background: #0c2a1a; border-color: #1f8f4a; color: {OK}; font-weight: bold; }}
 QPushButton#startBtn:hover {{ background: #13663a; color: #ffffff; }}
 QPushButton#stopBtn {{ background: #2e1214; border-color: #b83a43; color: {FAIL}; font-weight: bold; }}
