@@ -27,6 +27,7 @@ Right-click the tray icon for the current status, **Copy report**, **Start with 
 ## Classic tools
 
 - **Monitor** - ICMP ping sessions with response times and packet loss, per-process connection watching
+  (the ping Interval, Timeout and Graph length for new sessions are in **Settings**, the button at the right end of the tab row)
 - **Traceroute** - multi-hop path analysis to any host
 - **Dossier** - DNS, GeoIP and WHOIS for a domain or IP
 - **Alerts** - configurable latency, loss and jitter rules with tray notifications

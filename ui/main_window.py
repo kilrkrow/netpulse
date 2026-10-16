@@ -140,7 +140,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._export_btn)
 
         for b in (self._settings_btn, self._export_btn):
-            b.setFixedSize(80, 24)
+            b.setFixedSize(80, 22)
             b.setStyleSheet("padding: 0 8px;")
         return box
 

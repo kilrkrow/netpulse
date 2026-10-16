@@ -42,17 +42,14 @@ class SettingsDialog(QDialog):
         self.autoid = QCheckBox("Identify hops by owner so the Starlink dish can be recognized")
         self.autoid.setChecked(s.auto_identify_hops)
         form.addRow("", self.autoid)
+        form.addRow(QLabel("MONITOR TAB: NEW PING SESSIONS"))
+        self.ping_interval = self._spin(PING_INTERVAL_MS, s.ping_interval_ms, " ms")
+        form.addRow("Interval", self.ping_interval)
+        self.ping_timeout = self._spin(PING_TIMEOUT_MS, s.ping_timeout_ms, " ms")
+        form.addRow("Timeout", self.ping_timeout)
+        self.graph_points = self._spin(GRAPH_POINTS, s.graph_points, " pts")
+        form.addRow("Graph", self.graph_points)
         lay.addLayout(form)
-
-        lay.addWidget(QLabel("MONITOR TAB: NEW PING SESSIONS"))
-        mon = QFormLayout()
-        self.ping_interval = self._ms_spin(PING_INTERVAL_MS, s.ping_interval_ms, " ms")
-        mon.addRow("Interval", self.ping_interval)
-        self.ping_timeout = self._ms_spin(PING_TIMEOUT_MS, s.ping_timeout_ms, " ms")
-        mon.addRow("Timeout", self.ping_timeout)
-        self.graph_points = self._ms_spin(GRAPH_POINTS, s.graph_points, " pts")
-        mon.addRow("Graph", self.graph_points)
-        lay.addLayout(mon)
 
         lay.addWidget(QLabel("YOUR HOP LABELS"))
         self.overrides = QComboBox()
@@ -72,7 +69,7 @@ class SettingsDialog(QDialog):
         lay.addWidget(box)
 
     @staticmethod
-    def _ms_spin(rng, value, suffix) -> QSpinBox:
+    def _spin(rng, value, suffix) -> QSpinBox:
         sp = QSpinBox()
         sp.setRange(rng[0], rng[1])
         sp.setSuffix(suffix)
