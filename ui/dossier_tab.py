@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
 
 from core.dossier import DossierEngine, GeoInfo, WhoisInfo
 
-C_SURF = "#161b22"
-C_BORDER = "#30363d"
-C_TEXT = "#c9d1d9"
-C_MUTED = "#8b949e"
-C_BLUE = "#58a6ff"
-C_GREEN = "#3fb950"
+C_SURF = "#0a0e12"
+C_BORDER = "#1c2a34"
+C_TEXT = "#d5ecf2"
+C_MUTED = "#8aa2ad"
+C_BLUE = "#19e6ff"
+C_GREEN = "#4be07c"
 
 
 def _section(title: str) -> QLabel:
@@ -54,7 +54,7 @@ class InfoGrid(QFrame):
         super().__init__(parent)
         self.setStyleSheet(
             f"QFrame {{ background: {C_SURF}; border: 1px solid {C_BORDER}; "
-            f"border-radius: 5px; }}"
+            f"border-radius: 0; }}"
         )
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(12, 8, 12, 8)
@@ -246,8 +246,8 @@ class DossierTab(QWidget):
             "AAAA": C_GREEN,
             "MX": C_BLUE,
             "NS": C_BLUE,
-            "TXT": "#e3b341",
-            "CNAME": "#d2a8ff",
+            "TXT": "#ffb43f",
+            "CNAME": "#c08cff",
             "SOA": C_MUTED,
         }
 

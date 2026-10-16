@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
 
 from core.traceroute import TracerouteEngine, TracerouteHop
 
-C_GREEN = "#3fb950"
-C_YELLOW = "#d29922"
-C_RED = "#f85149"
-C_MUTED = "#8b949e"
+C_GREEN = "#4be07c"
+C_YELLOW = "#ffb43f"
+C_RED = "#ff4d5a"
+C_MUTED = "#8aa2ad"
 
 
 def _rtt_color(avg: Optional[float]) -> QColor:
@@ -86,7 +86,7 @@ class TracerouteTab(QWidget):
         self._abort_btn.clicked.connect(self._abort)
         toolbar.addWidget(self._abort_btn)
 
-        self._monitor_path_btn = QPushButton("📡 Monitor Path")
+        self._monitor_path_btn = QPushButton("Monitor Path")
         self._monitor_path_btn.setObjectName("startBtn")
         self._monitor_path_btn.setFixedWidth(140)
         self._monitor_path_btn.setToolTip(
@@ -165,12 +165,12 @@ class TracerouteTab(QWidget):
             return
 
         menu = QMenu(self)
-        monitor_action = menu.addAction(f"📡 Monitor {ip}")
+        monitor_action = menu.addAction(f"Monitor {ip}")
         monitor_action.triggered.connect(lambda: self.monitor_requested.emit(ip))
 
         if row < len(self._hops) and self._hops[row].hostname:
             hostname = self._hops[row].hostname
-            monitor_hn_action = menu.addAction(f"📡 Monitor {hostname}")
+            monitor_hn_action = menu.addAction(f"Monitor {hostname}")
             monitor_hn_action.triggered.connect(
                 lambda: self.monitor_requested.emit(hostname)
             )

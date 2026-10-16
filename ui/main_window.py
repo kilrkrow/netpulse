@@ -6,7 +6,7 @@ import json
 import os
 
 from PySide6.QtCore import Qt, QTimer, Slot
-from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -33,29 +33,25 @@ from ui.alerts_tab import AlertsTab
 from ui.dossier_tab import DossierTab
 from ui.monitor_tab import MonitorTab
 from ui.traceroute_tab import TracerouteTab
-
-
-def _make_tray_icon(color: str = "#3fb950") -> QIcon:
-    pixmap = QPixmap(32, 32)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QBrush(QColor(color)))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(4, 4, 24, 24)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.setPen(QColor("#ffffff"))
-    painter.drawEllipse(10, 10, 12, 12)
-    painter.end()
-    return QIcon(pixmap)
+from ui.rc.page import OutagePanel, PathPage
+from ui.rc.settings_dialog import SettingsDialog
+from ui.rc.tray import TrayManager, app_icon
+from ui.rc.widgets import harden_text
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, runtime=None):
         super().__init__()
+        self.rt = runtime
+        self._in_outage = False
+        self._bad_streak = 0
+        self._good_streak = 0
+        self._last_headline = ""
+        self._hint_shown = False
+        self.setWindowIcon(app_icon())
         self.setWindowTitle("NetPulse - Network Diagnostic Tool")
-        self.resize(1200, 750)
-        self.setMinimumSize(900, 600)
+        self.resize(1280, 860)
+        self.setMinimumSize(900, 640)
 
         self._current_stats: PingStats | None = None
         self._session_start: datetime.datetime | None = None
@@ -64,6 +60,7 @@ class MainWindow(QMainWindow):
         self._tracer = TracerouteEngine()
         self._dossier = DossierEngine()
 
+        self._quitting = False
         self._build_ui()
         self._build_tray()
         self._connect_signals()
@@ -72,7 +69,12 @@ class MainWindow(QMainWindow):
         self._sb_timer.timeout.connect(self._update_status_bar)
         self._sb_timer.start(1000)
 
-        self._load_history()
+        if self.rt and self.rt.is_sim:
+            self._monitor_tab._proc_combo.clear()      # a simulated run never shows this PC's real processes or history
+        else:
+            self._load_history()
+        self._wire_runtime()
+        harden_text(self)
 
     def _build_ui(self):
         central = QWidget()
@@ -81,7 +83,8 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(8, 8, 8, 4)
         root.setSpacing(6)
 
-        root.addWidget(self._build_toolbar())
+        self._toolbar = self._build_toolbar()
+        root.addWidget(self._toolbar)
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
@@ -91,36 +94,42 @@ class MainWindow(QMainWindow):
         self._dossier_tab = DossierTab(self._dossier)
         self._alerts_tab = AlertsTab(self._alert_mgr)
 
+        self._path_page = PathPage(self.rt.ctl, self.rt.settings) if self.rt else QWidget()
+        self._outage_page = OutagePanel(self.rt.ctl) if self.rt else QWidget()
+        self._tabs.addTab(self._path_page, "Path")
+        self._tabs.addTab(self._outage_page, "Outages")
         self._tabs.addTab(self._monitor_tab, "Monitor")
         self._tabs.addTab(self._tracer_tab, "Traceroute")
         self._tabs.addTab(self._dossier_tab, "Dossier")
         self._tabs.addTab(self._alerts_tab, "Alerts")
         root.addWidget(self._tabs)
+        self._toolbar.setVisible(False)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         self._status_bar = QStatusBar()
-        self._status_bar.setStyleSheet("QStatusBar { border-top: 1px solid #30363d; }")
         self.setStatusBar(self._status_bar)
 
-        self._sb_label = QLabel("Ready — add a target on the Monitor tab to start")
-        self._sb_label.setStyleSheet("color: #8b949e; padding: 2px 6px;")
+        self._sb_label = QLabel("Starting...")
+        self._sb_label.setStyleSheet("padding: 2px 6px;")
         self._status_bar.addWidget(self._sb_label)
 
         self._sb_right = QLabel("")
-        self._sb_right.setStyleSheet("color: #8b949e; padding: 2px 6px;")
+        self._sb_right.setStyleSheet("padding: 2px 6px;")
         self._status_bar.addPermanentWidget(self._sb_right)
 
         ver = QApplication.applicationVersion()
         self._sb_version = QLabel(f"v{ver}")
-        self._sb_version.setStyleSheet("color: #484f58; padding: 2px 8px; font-size: 8pt;")
+        self._sb_version.setStyleSheet("color: #52666f; padding: 2px 8px; font-size: 8pt;")
+        if self.rt and self.rt.is_sim:
+            sim = QLabel("SIMULATED DATA")
+            sim.setStyleSheet("color: #ffb43f; padding: 2px 8px; font-size: 8pt; font-weight: bold;")
+            self._status_bar.addPermanentWidget(sim)
         self._status_bar.addPermanentWidget(self._sb_version)
 
     def _build_toolbar(self) -> QWidget:
         bar = QFrame()
         bar.setObjectName("toolbar")
-        bar.setStyleSheet(
-            "#toolbar { background: #161b22; border: 1px solid #30363d; "
-            "border-radius: 6px; padding: 4px; }"
-        )
+        bar.setStyleSheet("#toolbar { background: #0a0e12; border: 1px solid #1c2a34; padding: 4px; }")
 
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -131,7 +140,7 @@ class MainWindow(QMainWindow):
         self._interval_spin.setRange(100, 60000)
         self._interval_spin.setValue(1000)
         self._interval_spin.setSuffix(" ms")
-        self._interval_spin.setFixedWidth(100)
+        self._interval_spin.setFixedWidth(116)
         layout.addWidget(self._interval_spin)
 
         layout.addWidget(QLabel("Timeout:"))
@@ -139,7 +148,7 @@ class MainWindow(QMainWindow):
         self._timeout_spin.setRange(200, 10000)
         self._timeout_spin.setValue(2000)
         self._timeout_spin.setSuffix(" ms")
-        self._timeout_spin.setFixedWidth(100)
+        self._timeout_spin.setFixedWidth(116)
         layout.addWidget(self._timeout_spin)
 
         layout.addWidget(QLabel("Graph:"))
@@ -147,7 +156,7 @@ class MainWindow(QMainWindow):
         self._window_spin.setRange(30, 3600)
         self._window_spin.setValue(300)
         self._window_spin.setSuffix(" pts")
-        self._window_spin.setFixedWidth(90)
+        self._window_spin.setFixedWidth(106)
         layout.addWidget(self._window_spin)
 
         layout.addStretch()
@@ -160,43 +169,85 @@ class MainWindow(QMainWindow):
         return bar
 
     def _build_tray(self):
-        self._tray = QSystemTrayIcon(self)
-        self._tray.setIcon(_make_tray_icon("#8b949e"))
-        self._tray.setToolTip("NetPulse - Not running")
-
-        menu = QMenu()
-        self._tray_status_action = menu.addAction("Not running")
-        self._tray_status_action.setEnabled(False)
-        menu.addSeparator()
-
-        show_action = menu.addAction("Show / Hide")
-        show_action.triggered.connect(self._toggle_window)
-
-        menu.addSeparator()
-        about_action = menu.addAction("About NetPulse…")
-        about_action.triggered.connect(self._show_about)
-
-        menu.addSeparator()
-        quit_action = menu.addAction("Exit NetPulse")
-        quit_action.triggered.connect(QApplication.quit)
-
-        self._tray.setContextMenu(menu)
+        self._tray_mgr = TrayManager(
+            self, on_show=self._show_window, on_copy=self._copy_report, on_settings=self._open_settings,
+            on_about=self._show_about, on_exit=self._exit_app, simulate=bool(self.rt and self.rt.is_sim))
+        self._tray = self._tray_mgr.tray
         self._tray.activated.connect(self._tray_activated)
         self._tray.messageClicked.connect(self._on_notification_clicked)
-        self._tray.show()
-
+        self._tray_mgr.show()
         self._last_alert_host: str = ""  # host from most recent alert notification
+
+    def _wire_runtime(self):
+        if not self.rt:
+            return
+        self.rt.bridge.updated.connect(self._on_rc_update)
+        self.rt.bridge.outages_changed.connect(self._outage_page.refresh)
+        self._path_page.copy_report.connect(self._copy_report)
+        self._path_page.open_settings.connect(self._open_settings)
+        self._outage_page.copy_report.connect(self._copy_report)
+        if self.rt.error:
+            self._sb_label.setText("  " + self.rt.error)
+
+    @Slot(object, object)
+    def _on_rc_update(self, snap, verdict):
+        self._path_page.update_data(snap, verdict)
+        self._tray_mgr.set_verdict(verdict.kind, verdict.headline)
+        self._last_headline = verdict.headline
+        if not self._current_stats:
+            self._sb_label.setText("  " + verdict.headline)
+        # notifications: require two bad (or good) evaluations in a row so one blip never pops a balloon
+        if verdict.kind == "outage":
+            self._bad_streak, self._good_streak = self._bad_streak + 1, 0
+        elif verdict.kind == "healthy":
+            self._good_streak, self._bad_streak = self._good_streak + 1, 0
+        if self.rt.settings.value.notifications and not self.rt.is_sim:
+            if verdict.kind == "outage" and not self._in_outage and self._bad_streak >= 2:
+                self._in_outage = True
+                self._tray_mgr.notify("NetPulse: connection problem", verdict.headline, warn=True)
+            elif verdict.kind == "healthy" and self._in_outage and self._good_streak >= 3:
+                self._in_outage = False
+                self._tray_mgr.notify("NetPulse: back online", "The connection is answering again.")
+        elif verdict.kind == "healthy":
+            self._in_outage = False
+
+    def _on_tab_changed(self, idx: int):
+        self._toolbar.setVisible(self._tabs.widget(idx) is self._monitor_tab)
+
+    def _copy_report(self):
+        if not self.rt:
+            return
+        QGuiApplication.clipboard().setText(self.rt.ctl.report_text())
+        self._tray_mgr.notify("NetPulse", "Report copied to the clipboard.")
+        self._sb_label.setText("  Report copied to the clipboard")
+
+    def _open_settings(self):
+        if not self.rt:
+            return
+        self.show()
+        SettingsDialog(self.rt.settings, on_applied=self.rt.apply_settings, parent=self).exec()
+
+    def _show_window(self):
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.raise_()
+        self.activateWindow()
+
+    def _exit_app(self):
+        self._quitting = True
+        self._tray_mgr.hide()
+        QApplication.quit()
 
     # ------------------------------------------------------------------
     # Signal wiring
     # ------------------------------------------------------------------
     def _connect_signals(self):
-        # Toolbar spins → MonitorTab defaults
+        # Toolbar spins -> MonitorTab defaults
         self._interval_spin.valueChanged.connect(self._monitor_tab.set_interval)
         self._timeout_spin.valueChanged.connect(self._monitor_tab.set_timeout)
         self._window_spin.valueChanged.connect(self._monitor_tab.set_window)
 
-        # MonitorTab → MainWindow
+        # MonitorTab -> MainWindow
         self._monitor_tab.worst_stats_updated.connect(self._on_stats)
         self._monitor_tab.session_started.connect(self._on_session_started)
         self._monitor_tab.any_running_changed.connect(self._on_any_running_changed)
@@ -204,7 +255,7 @@ class MainWindow(QMainWindow):
         # Alert manager
         self._alert_mgr.alert_triggered.connect(self._on_alert)
 
-        # Traceroute → Monitor hop
+        # Traceroute -> Monitor hop
         self._tracer_tab.monitor_requested.connect(self._on_monitor_hop_requested)
 
         # Traceroute pause/resume
@@ -235,6 +286,8 @@ class MainWindow(QMainWindow):
             pass
 
     def _save_history(self):
+        if self.rt and self.rt.is_sim:
+            return
         try:
             data = {
                 'ping':    self._monitor_tab.get_history(),
@@ -261,16 +314,13 @@ class MainWindow(QMainWindow):
     def _on_any_running_changed(self, running: bool):
         if not running:
             self._session_start = None
-            self._tray.setIcon(_make_tray_icon("#8b949e"))
-            self._tray.setToolTip("NetPulse - Stopped")
-            self._tray_status_action.setText("Stopped")
-            self._sb_label.setText("  Ready — add a target on the Monitor tab to start")
+            self._current_stats = None
+            self._sb_label.setText("  " + (self._last_headline or "Ready"))
             self._sb_right.setText("")
 
     @Slot(object)
     def _on_stats(self, stats: PingStats):
         self._current_stats = stats
-        self._update_tray_icon(stats)
 
     # ------------------------------------------------------------------
     # Traceroute pause / resume
@@ -280,7 +330,7 @@ class MainWindow(QMainWindow):
         if self._monitor_tab.any_paused is False and self._current_stats:
             self._monitor_tab.pause_all()
             self._sb_label.setText(
-                f"  ⏸ Ping paused — traceroute in progress  ({self._current_stats.host})"
+                f"  Ping paused: traceroute in progress  ({self._current_stats.host})"
             )
 
     @Slot(list)
@@ -306,37 +356,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Tray icon
     # ------------------------------------------------------------------
-    def _update_tray_icon(self, stats: PingStats):
-        rtt = stats.last_rtt
-        loss = stats.loss_pct
-        rtt_thresh = next(
-            (
-                rule.threshold
-                for rule in self._alert_mgr.rules
-                if rule.metric == "last_rtt" and rule.operator in (">", ">=")
-            ),
-            100,
-        )
-        if rtt is None or loss > 10:
-            color = "#f85149"
-        elif rtt > rtt_thresh or loss > 2:
-            color = "#d29922"
-        else:
-            color = "#3fb950"
-
-        self._tray.setIcon(_make_tray_icon(color))
-        if rtt is not None:
-            self._tray.setToolTip(
-                f"NetPulse - {stats.host}\nRTT: {rtt:.0f}ms  Loss: {loss:.1f}%"
-            )
-        self._tray_status_action.setText(f"Monitoring: {stats.host}")
-
     @Slot(object)
     def _on_alert(self, event):
         self._last_alert_host = event.host
         msg = event.message
         if event.host:
-            msg += "\n\nClick to run traceroute →"
+            msg += "\n\nClick to run traceroute"
         self._tray.showMessage(
             "NetPulse Alert",
             msg,
@@ -346,7 +371,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_notification_clicked(self):
-        """User clicked a tray alert balloon — open app and launch traceroute."""
+        """User clicked a tray alert balloon - open app and launch traceroute."""
         self.show()
         self.raise_()
         self.activateWindow()
@@ -410,14 +435,14 @@ class MainWindow(QMainWindow):
     # Window / tray helpers
     # ------------------------------------------------------------------
     def closeEvent(self, event):
+        if self._quitting or not QSystemTrayIcon.isSystemTrayAvailable():
+            event.accept()
+            return
         event.ignore()
         self.hide()
-        self._tray.showMessage(
-            "NetPulse",
-            "Still running in background. Right-click the tray icon to exit.",
-            QSystemTrayIcon.MessageIcon.Information,
-            2500,
-        )
+        if not self._hint_shown:
+            self._hint_shown = True
+            self._tray_mgr.notify("NetPulse", "Still running in the tray. Right-click the tray icon to exit.")
 
     def _show_about(self):
         ver = QApplication.applicationVersion()
@@ -425,11 +450,11 @@ class MainWindow(QMainWindow):
             self,
             "About NetPulse",
             f"<h3>NetPulse v{ver}</h3>"
-            "<p>Real-time network diagnostic tool.<br>"
-            "Ping monitoring, traceroute, DNS/GeoIP/WHOIS dossier, and configurable alerts.</p>"
-            "<p style='color:#8b949e; font-size:9pt;'>"
-            "© 2025 Guy Schamp (kilrkrow)<br>"
-            "Released under the MIT License."
+            "<p>Network diagnostics with a guided root-cause view: path map, per-hop probes, "
+            "plain-English verdict, outage log, IP research, ping, traceroute and domain dossier.</p>"
+            "<p style='color:#8aa2ad; font-size:9pt;'>"
+            "(c) 2026 Guy Schamp (kilrkrow)<br>"
+            "Free software under the GNU General Public License v3."
             "</p>",
         )
 
