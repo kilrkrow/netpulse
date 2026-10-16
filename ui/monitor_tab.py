@@ -123,6 +123,7 @@ class MonitorTab(QWidget):
         # Status line: the message on the left, the Table / Graph view toggle at the right end
         status_row = QHBoxLayout()
         status_row.setSpacing(6)
+        status_row.setContentsMargins(0, 0, 0, 2)      # 6 + 2: 8 px to the table / graph frame, as at the pane edge
         self._status_lbl = QLabel("Add a target above to start monitoring.")
         self._status_lbl.setStyleSheet("color: #8aa2ad; font-size: 9pt;")
         status_row.addWidget(self._status_lbl, 1)

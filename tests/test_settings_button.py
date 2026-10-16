@@ -292,6 +292,8 @@ def test_dock_and_monitor_rows_share_one_set_of_tolerances(app, tmp_path, monkey
         assert dock[-1].right() == status[-1].right() == pane.right() - 8
         # the status row sits 6 px under the controls row (the dock is as tall as the row)
         assert status[0].top() - max(r.bottom() for r in controls + dock) - 1 == 6
+        # ... and 8 px (the pane-edge distance) between the status row and the table / graph frame below it
+        assert rect_of(win, mt._stack).top() - max(r.bottom() for r in status) - 1 == 8
         # the same top gap on the other tabs' first row (dock slot): 8 px under the border above
         for i in (1, 3, 4, 5):
             win._tabs.setCurrentIndex(i)
