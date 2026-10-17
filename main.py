@@ -9,7 +9,7 @@ Command line:
                        The environment variable NETPULSE_SIMULATE does the same. Not shown anywhere in the UI.
 """
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 import argparse
 import os
