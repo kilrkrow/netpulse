@@ -105,12 +105,23 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Release step: copy the finished folder to .\release\NetPulse and zip it (release\ is gitignored)
+echo Publishing to release folder... >> build.log
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\release.ps1" -Dist "%DISTPATH%\NetPulse" >> build.log 2>&1
+if errorlevel 1 (
+    echo Build finished: %DATE% %TIME%  [FAILED: release step] >> build.log
+    echo.
+    echo RELEASE STEP FAILED. See build.log for details.
+    pause
+    exit /b 1
+)
 echo Build finished: %DATE% %TIME%  [OK] >> build.log
 
 echo.
 echo ============================================
 echo  Build complete!
 echo  Executable: %DISTPATH%\NetPulse\NetPulse.exe
+echo  Release:    %~dp0release\NetPulse\NetPulse.exe (+ zip)
 echo  Log saved:  build.log
 echo ============================================
 echo.

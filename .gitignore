@@ -31,3 +31,6 @@ build.log
 
 # Local secrets
 git token.txt
+
+# Local release folder (exe folder + zip, built by build.bat)
+release/
