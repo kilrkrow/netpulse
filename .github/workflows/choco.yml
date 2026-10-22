@@ -1,17 +1,107 @@
 name: Publish to Chocolatey
 
+# Runs after a successful "Build & Release" for a v* tag, or by hand for an
+# existing release tag (Actions > Publish to Chocolatey > Run workflow, or
+# `gh workflow run choco.yml -f tag=v1.4.2`).
+#
+# The package id comes from the single choco/*.nuspec file (currently
+# kilrkrow-netpulse; the community id "netpulse" belongs to an unrelated
+# package). The templates are taken from the commit this workflow runs on
+# (the default branch for workflow_run), not from the release tag, so an
+# older tag can be published with the current package definition.
+
 on:
   workflow_run:
     workflows: ["Build & Release"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish (e.g. v1.4.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    uses: kilrkrow/.github/.github/workflows/choco-publish.yml@main
-    with:
-      release_tag: ${{ github.event.workflow_run.head_branch }}
-      package_id: netpulse
-      zip_pattern: "NetPulse-*-win64.zip"
-    secrets:
-      CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+      ZIP_PATTERN: "NetPulse-*-win64.zip"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release zip and compute SHA256
+        run: |
+          $tag = $env:RELEASE_TAG -replace '^refs/tags/', ''
+          if ($tag -notmatch '^v\d') { throw "Not a release tag: '$tag'" }
+          $version = $tag.Substring(1)
+
+          $zipPath = "$env:RUNNER_TEMP\release.zip"
+          gh release download $tag --repo "$env:GITHUB_REPOSITORY" --pattern "$env:ZIP_PATTERN" --output $zipPath
+          if ($LASTEXITCODE -ne 0) { throw "Could not download $env:ZIP_PATTERN from release $tag" }
+
+          $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash
+          Write-Host "Tag: $tag  Version: $version  SHA256: $hash"
+          "VERSION=$version" >> $env:GITHUB_ENV
+          "CHECKSUM=$hash"   >> $env:GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+
+      - name: Fill templates (version + checksum)
+        run: |
+          $nuspecs = @(Get-ChildItem choco\*.nuspec)
+          if ($nuspecs.Count -ne 1) { throw "Expected exactly one choco\*.nuspec, found $($nuspecs.Count)" }
+          $nuspec = $nuspecs[0].FullName
+          $id = ([xml](Get-Content $nuspec -Raw)).package.metadata.id
+          Write-Host "Package id: $id"
+          "NUSPEC=$nuspec" >> $env:GITHUB_ENV
+          "PACKAGE_ID=$id" >> $env:GITHUB_ENV
+
+          foreach ($f in @($nuspec, 'choco\tools\chocolateyinstall.ps1')) {
+            (Get-Content $f) `
+              -replace '__VERSION__',  $env:VERSION `
+              -replace '__CHECKSUM__', $env:CHECKSUM |
+            Set-Content $f
+          }
+        shell: pwsh
+
+      - name: Pack
+        run: |
+          $out = "$env:RUNNER_TEMP\choco-out"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          choco pack "$env:NUSPEC" --output-directory "$out"
+          if ($LASTEXITCODE -ne 0) { throw "choco pack failed" }
+        shell: pwsh
+
+      - name: Push to chocolatey.org
+        run: |
+          $nupkgs = @(Get-ChildItem "$env:RUNNER_TEMP\choco-out\*.nupkg")
+          if ($nupkgs.Count -ne 1) { throw "Expected exactly one .nupkg, found $($nupkgs.Count)" }
+          $nupkg = $nupkgs[0].FullName
+          Write-Host "Pushing $(Split-Path $nupkg -Leaf) (id $env:PACKAGE_ID)"
+
+          # Keep going on stderr output so the exit code and message can be checked below
+          $ErrorActionPreference = 'Continue'
+          $log = choco push "$nupkg" --source https://push.chocolatey.org --api-key "$env:CHOCOLATEY_API_KEY" 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Host $log
+          if ($code -ne 0) {
+            if ($log -match '403') {
+              Write-Host "::error::choco push got 403 Forbidden for package id '$env:PACKAGE_ID'. The id is most likely owned by another maintainer on community.chocolatey.org (check https://community.chocolatey.org/packages/$env:PACKAGE_ID), or the API key does not belong to an owner of this id. Change <id> in the choco nuspec or fix the CHOCOLATEY_API_KEY secret."
+            } elseif ($log -match '409') {
+              Write-Host "::error::choco push got 409 Conflict: version $env:VERSION of '$env:PACKAGE_ID' already exists on community.chocolatey.org."
+            }
+            exit $code
+          }
+        env:
+          CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
+        shell: pwsh
