@@ -1,14 +1,16 @@
 name: Publish to Chocolatey
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Build & Release"]
+    types: [completed]
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     uses: kilrkrow/.github/.github/workflows/choco-publish.yml@main
     with:
-      release_tag: ${{ github.event.release.tag_name }}
+      release_tag: ${{ github.event.workflow_run.head_branch }}
       package_id: netpulse
       zip_pattern: "NetPulse-*-win64.zip"
     secrets:
