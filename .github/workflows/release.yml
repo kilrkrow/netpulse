@@ -1,0 +1,51 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # needed to create/upload a Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --quiet pyinstaller -r requirements.txt
+
+      - name: Build with PyInstaller
+        env:
+          QT_API: PySide6
+          PYQTGRAPH_QT_LIB: PySide6
+        run: |
+          $dist = "$env:RUNNER_TEMP\NetPulse-dist"
+          $work = "$env:RUNNER_TEMP\NetPulse-work"
+          python -m PyInstaller --noconfirm --clean `
+            --distpath $dist `
+            --workpath $work `
+            NetPulse.spec
+
+          # Re-use the existing release script to zip and derive the version name
+          $zipDir = "$env:RUNNER_TEMP\zips"
+          New-Item -ItemType Directory -Force $zipDir | Out-Null
+          & tools\release.ps1 -Dist "$dist\NetPulse"
+
+          # Expose zip path and name for the upload step
+          $zip = Get-ChildItem release\*.zip | Select-Object -First 1
+          echo "ZIP_PATH=$($zip.FullName)" >> $env:GITHUB_ENV
+          echo "ZIP_NAME=$($zip.Name)"     >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Create GitHub Release and upload zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_PATH }}
+          generate_release_notes: true
