@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>netpulse</id>
+    <version>__VERSION__</version>
+    <title>NetPulse</title>
+    <authors>kilrkrow</authors>
+    <projectUrl>https://github.com/kilrkrow/netpulse</projectUrl>
+    <licenseUrl>https://github.com/kilrkrow/netpulse/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>NetPulse is a bare-bones Windows network diagnostic tool featuring continuous ping monitoring, traceroute, domain dossier (DNS, WHOIS, IP research), and root-cause analysis. Self-contained — no Python install required.</description>
+    <summary>Bare-bones network diagnostic: ping, traceroute, domain dossier.</summary>
+    <tags>network ping traceroute dns whois monitor diagnostic admin</tags>
+    <releaseNotes>https://github.com/kilrkrow/netpulse/releases/tag/v__VERSION__</releaseNotes>
+  </metadata>
+</package>

@@ -1,0 +1,15 @@
+name: Publish to Chocolatey
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    uses: kilrkrow/.github/.github/workflows/choco-publish.yml@main
+    with:
+      release_tag: ${{ github.event.release.tag_name }}
+      package_id: netpulse
+      zip_pattern: "NetPulse-*-win64.zip"
+    secrets:
+      CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
