@@ -89,12 +89,13 @@ class HopCell(QWidget):
         self.setFixedHeight(CELL_H)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def set_model(self, m: CellModel, now: float, selected: bool) -> None:
+    def set_model(self, m: CellModel, now: float, selected: bool, interval_s: float = 1.0) -> None:
         self.model, self.selected = m, selected
         self._series_now = now
         if m.hop.ttl >= 1:
             pts = [(s.ts, s.rtt_ms if s.ok else None) for s in m.hop.samples[-90:]]
-            self.spark.set_series([(theme.SEG_COLORS.get(m.hop.segment, theme.OK), pts, False)], now)
+            self.spark.set_series([(theme.SEG_COLORS.get(m.hop.segment, theme.OK), pts, False)], now,
+                                  interval_s=interval_s)
             self.spark.show()
         else:
             self.spark.hide()
@@ -236,7 +237,7 @@ class PathView(QScrollArea):
         self._now = 0.0
 
     # ------------------------------------------------------------------ data
-    def update_data(self, snap: PathSnapshot, verdict: Verdict) -> None:
+    def update_data(self, snap: PathSnapshot, verdict: Verdict, interval_s: float = 1.0) -> None:
         self._models = build_models(snap)
         self._verdict = verdict
         self._now = snap.ts
@@ -251,7 +252,7 @@ class PathView(QScrollArea):
         if self._selected_ttl is None and len(self._models) > 1:
             self._selected_ttl = 1
         for c, m in zip(self._cells, self._models):
-            c.set_model(m, snap.ts, m.hop.ttl == self._selected_ttl)
+            c.set_model(m, snap.ts, m.hop.ttl == self._selected_ttl, interval_s)
         self._layout()
         self._strip.update()
 

@@ -257,6 +257,7 @@ class MainWindow(QMainWindow):
     def _apply_settings(self):
         self.rt.apply_settings()
         self._apply_monitor_settings()
+        self._path_page.redraw()
 
     def _apply_monitor_settings(self):
         """Interval / Timeout / Graph become the defaults of the Monitor tab's next ping sessions."""
