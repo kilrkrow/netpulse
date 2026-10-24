@@ -28,6 +28,26 @@ def nice_ceiling(v: float) -> float:
     return float(10 * mag)
 
 
+# How many probe intervals of quiet still draw as one line. 4.5 keeps the old
+# behavior at the default 1 s interval (a gap past 4.5 s was a break).
+_BREAK_INTERVALS = 4.5
+
+
+def trace_break_gap(interval_s: float) -> float:
+    """Longest silence, in seconds, that still draws as a continuous trace.
+
+    Scales with the probe interval, so a 5 s setting joins its samples the same way a
+    1 s setting does. A longer gap is a break in the line, not a slope across an outage.
+    """
+    try:
+        interval = float(interval_s)
+    except (TypeError, ValueError):
+        interval = 1.0
+    if not math.isfinite(interval) or interval <= 0:
+        interval = 1.0
+    return _BREAK_INTERVALS * interval
+
+
 def log_fraction(ms: Optional[float], lo: float = 1.0, hi: float = 500.0) -> float:
     if ms is None:
         return 0.0
@@ -144,6 +164,7 @@ class PhosphorGraph(QWidget):
         super().__init__(parent)
         self.window_s = window_s
         self.compact = compact
+        self.interval_s = 1.0
         self._series: List[Series] = []
         self._now = time.time()
         self._ymax = 50.0
@@ -151,10 +172,13 @@ class PhosphorGraph(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(34 if compact else 120)
 
-    def set_series(self, series: List[Series], now: Optional[float] = None, title: str = "") -> None:
+    def set_series(self, series: List[Series], now: Optional[float] = None, title: str = "",
+                   interval_s: Optional[float] = None) -> None:
         self._series = series
         self._now = now if now is not None else time.time()
         self._title = title
+        if interval_s is not None:
+            self.interval_s = interval_s
         vals = [r for _c, pts, _d in series for t, r in pts if r is not None and t >= self._now - self.window_s]
         if vals:
             vals.sort()
@@ -216,6 +240,7 @@ class PhosphorGraph(QWidget):
             return yb - min(r, self._ymax) * sy
 
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        break_gap = trace_break_gap(self.interval_s)
         for color, pts, dashed in self._series:
             base = QColor(color)
             # loss ticks first (behind the trace)
@@ -245,7 +270,7 @@ class PhosphorGraph(QWidget):
                     pen.setStyle(Qt.PenStyle.DashLine)
                 p.setPen(pen)
                 for (x1, y1, ta), (x2, y2, tb) in zip(seg, seg[1:]):
-                    if tb - ta > 4.5:               # a long silence is a break in the line, not a slope
+                    if tb - ta > break_gap:        # a long silence is a break in the line, not a slope
                         continue
                     p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
             x, y, _t = path[-1]

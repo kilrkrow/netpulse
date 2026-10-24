@@ -55,13 +55,13 @@ class DetailPanel(QWidget):
         p.setPen(QPen(QColor(theme.BORDER), 1))
         p.drawRect(0, 0, self.width() - 1, self.height() - 1)
 
-    def show_hop(self, snap: PathSnapshot, ttl: Optional[int]) -> None:
+    def show_hop(self, snap: PathSnapshot, ttl: Optional[int], interval_s: float = 1.0) -> None:
         hop = snap.hop_by_ttl(ttl) if ttl is not None else None
         if hop is None or hop.ttl == 0:
             self.title.setText("THIS PC" if hop else "SELECT A HOP")
             for c in self.cells.values():
                 c.set_value("--", theme.DIMMER)
-            self.graph.set_series([], snap.ts)
+            self.graph.set_series([], snap.ts, interval_s=interval_s)
             self.note.setText("Click a hop in the path to see its history.")
             return
         recent = [s for s in hop.samples if s.ts >= snap.ts - 300]
@@ -89,7 +89,7 @@ class DetailPanel(QWidget):
             series.append((theme.SEG_COLORS[SEG_INTERNET], [(s.ts, s.rtt_ms if s.ok else None) for s in tgt.samples
                                                             if s.ts >= snap.ts - 300], True))
         series.append((col, [(s.ts, s.rtt_ms if s.ok else None) for s in recent], False))
-        self.graph.set_series(series, snap.ts)
+        self.graph.set_series(series, snap.ts, interval_s=interval_s)
         notes = []
         if hop.hostname:
             notes.append(f"Reverse DNS: {hop.hostname}")
@@ -130,9 +130,15 @@ class PathPage(QWidget):
 
     def update_data(self, snap: PathSnapshot, verdict: Verdict) -> None:
         self._snap = snap
+        interval = self.ctl.engine.cfg.interval_s
         self.verdict.show_verdict(verdict, snap.ts)
-        self.path.update_data(snap, verdict)
-        self.detail.show_hop(snap, self.path.selected_ttl())
+        self.path.update_data(snap, verdict, interval)
+        self.detail.show_hop(snap, self.path.selected_ttl(), interval)
+
+    def redraw(self) -> None:
+        """Paint the last snapshot again. Used when the probe interval changes, so the traces join at the new spacing without waiting for the next probe."""
+        if self._snap is not None and self.ctl.verdict is not None:
+            self.update_data(self._snap, self.ctl.verdict)
 
     def _on_hop_selected(self, ttl: int) -> None:
         if self._snap is not None:
