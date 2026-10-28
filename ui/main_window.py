@@ -487,7 +487,7 @@ class MainWindow(QMainWindow):
             "<p>Network diagnostics with a guided root-cause view: path map, per-hop probes, "
             "plain-English verdict, outage log, IP research, ping, traceroute and domain dossier.</p>"
             "<p style='color:#8aa2ad; font-size:9pt;'>"
-            "(c) 2026 Guy Schamp (kilrkrow)<br>"
+            "(c) 2026 kilrkrow<br>"
             "Free software under the GNU General Public License v3."
             "</p>",
         )
